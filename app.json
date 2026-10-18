@@ -1,24 +1,26 @@
 {
   "expo": {
-    "name": "quran-wird-app",
-    "slug": "quran-wird-app",
+    "name": "زاد الأنصاري",
+    "slug": "zad-al-ansari",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "package": "com.zad.alansari",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#064E3B",
+        "foregroundImage": "./assets/logo.png"
       }
     },
     "web": {
-      "favicon": "./assets/favicon.png"
-    }
+      "favicon": "./assets/logo.png"
+    },
+    "plugins": [
+      "expo-sharing"
+    ]
   }
 }
