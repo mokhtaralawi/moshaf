@@ -77,3 +77,36 @@ export const testServerConnection = async (targetUrl) => {
     };
   }
 };
+
+/**
+ * اختبار الاتصال بقاعدة بيانات Supabase
+ */
+export const testSupabaseConnection = async () => {
+  try {
+    const { supabase } = require('../utils/supabase');
+    const { data, error } = await supabase.from('app_state').select('id, last_modified').limit(1);
+
+    if (error) {
+      if (error.code === 'PGRST205' || error.message?.includes('schema cache')) {
+        return {
+          success: false,
+          tablesMissing: true,
+          message: 'تم الاتصال بـ Supabase بنجاح! لكن يلزم تنفيذ سكريبت supabase_schema.sql في الـ SQL Editor لإنشاء الجداول.',
+        };
+      }
+      return { success: false, message: `خطأ من Supabase: ${error.message}` };
+    }
+
+    return {
+      success: true,
+      data,
+      message: 'الاتصال بقاعدة بيانات Supabase نشط ومحدث بنجاح 🟢',
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `تعذر الاتصال بـ Supabase: ${error.message}`,
+    };
+  }
+};
+

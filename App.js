@@ -60,7 +60,13 @@ export default function App() {
   }
 
   // 5. إذا كان مستخدماً عادياً (قارئاً في المجموعة)
-  return <UserWirdScreen currentUser={currentUser} onLogout={handleLogout} />;
+  return (
+    <UserWirdScreen
+      currentUser={currentUser}
+      onLogout={handleLogout}
+      onUserUpdated={(updatedUser) => setCurrentUser(updatedUser)}
+    />
+  );
 }
 
 const styles = StyleSheet.create({

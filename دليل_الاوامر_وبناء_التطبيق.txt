@@ -1,0 +1,72 @@
+# دليل أوامر مشروع زاد الأنصاري (Quran Wird App)
+# أوامر التشغيل، الفحص، وبناء وتوليد تطبيق أندرويد (APK)
+======================================================================
+
+## 1. المتطلبات الأساسية (Prerequisites)
+- تثبيت Node.js (الإصدار 18 أو 20 أو أحدث).
+- وجود حزمة Android SDK (مثبتة تلقائياً مع Android Studio أو Flutter سابقاً).
+- التأكد من تعيين متغيرات البيئة التالية:
+  - ANDROID_HOME = C:\Users\<YourUser>\AppData\Local\Android\Sdk
+  - إضافة مسارات أدوات الأندرويد لـ PATH:
+    %ANDROID_HOME%\platform-tools
+    %ANDROID_HOME%\cmdline-tools\latest\bin
+
+----------------------------------------------------------------------
+
+## 2. أوامر التشغيل والتطوير (Development & Running)
+
+### أ) تشغيل خادم التطوير (Metro Bundler):
+npx expo start
+
+### ب) تشغيل الخادم مع تنظيف الذاكرة المؤقتة (Clear Cache):
+npx expo start -c
+
+### ج) فحص سلامة الحزم والتوافق:
+npx expo-doctor
+
+### د) تثبيت مكتبات جديدة متوافقة مع إصدار Expo:
+npx expo install <اسم-المكتبة>
+
+----------------------------------------------------------------------
+
+## 3. أوامر توليد وتحديث كود الأندرويد الأصلي (Prebuild / Native Generation)
+
+عند إضافة مكتبات أصلية جديدة أو تعديل إعدادات app.json:
+npx expo prebuild --platform android --clean
+
+----------------------------------------------------------------------
+
+## 4. أوامر بناء وتوليد ملف التطبيق (Build APK - Release)
+
+*ملاحظة: يتم تنفيذ أوامر Gradle من داخل مجلد `android`:*
+
+### الانتقال إلى مجلد أندرويد:
+cd android
+
+### أ) بناء APK بحجم مخفض لمعمارية الهواتف الحديثة (arm64-v8a) [الموصى به]:
+# الحجم يكون تقريباً ~23 ميجابايت فقط بدلاً من 70 ميجابايت:
+.\gradlew.bat assembleRelease -PreactNativeArchitectures=arm64-v8a
+
+### ب) بناء APK لجميع الهواتف بصيغة Universal (شامل كل المعماريات):
+.\gradlew.bat assembleRelease
+
+### ج) تنظيف مخلفات البناء السابقة إذا واجهت أي تعليق:
+.\gradlew.bat clean
+
+----------------------------------------------------------------------
+
+## 5. أين تجد ملف التطبيق بعد البناء؟ (APK Output Location)
+
+الملفات الناتجة تجدها في المسار التالي:
+android\app\build\outputs\apk\release\
+
+- تطبيق الهواتف الحديثة:
+  android\app\build\outputs\apk\release\app-arm64-v8a-release.apk
+
+- التطبيق الشامل (Universal):
+  android\app\build\outputs\apk\release\app-universal-release.apk
+
+----------------------------------------------------------------------
+
+## 6. أمر سريع لتثبيت الـ APK مباشرة على الهاتف المتصل بالكمبيوتر (ADB):
+adb install -r android\app\build\outputs\apk\release\app-arm64-v8a-release.apk

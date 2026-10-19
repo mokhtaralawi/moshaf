@@ -35,9 +35,12 @@ import {
   getFormattedHijriDate,
 } from '../utils/wirdCalculator';
 import SyncStatusBadge from '../components/SyncStatusBadge';
+import UserSettingsModal from '../components/UserSettingsModal';
 import { subscribeSyncStatus } from '../services/syncService';
 
-export default function UserWirdScreen({ currentUser, onLogout }) {
+export default function UserWirdScreen({ currentUser: initialUser, onLogout, onUserUpdated }) {
+  const [currentUser, setCurrentUser] = useState(initialUser);
+  const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const [currentStatus, setCurrentStatus] = useState('pending'); // 'read' | 'pending' | 'excused'
   const [statusTimestamp, setStatusTimestamp] = useState(null);
   const [juzCount, setJuzCount] = useState(1);
@@ -200,6 +203,13 @@ export default function UserWirdScreen({ currentUser, onLogout }) {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <View style={styles.headerTopLeft}>
+            <TouchableOpacity
+              style={styles.settingsUserBtn}
+              onPress={() => setIsSettingsVisible(true)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.settingsUserBtnText}>⚙️ إعداداتي</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.logoutBtn} onPress={onLogout} activeOpacity={0.8}>
               <Text style={styles.logoutText}>🚪 خروج</Text>
             </TouchableOpacity>
@@ -660,6 +670,19 @@ export default function UserWirdScreen({ currentUser, onLogout }) {
           </View>
         </View>
       </Modal>
+
+      {/* نافذة تعديل بيانات المستخدم وكلمة المرور */}
+      <UserSettingsModal
+        visible={isSettingsVisible}
+        onClose={() => setIsSettingsVisible(false)}
+        currentUser={currentUser}
+        onProfileUpdated={(updated) => {
+          setCurrentUser(updated);
+          if (onUserUpdated) {
+            onUserUpdated(updated);
+          }
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -985,7 +1008,7 @@ const styles = StyleSheet.create({
   },
   logoutBtn: {
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 14,
     borderWidth: 1,
@@ -993,7 +1016,20 @@ const styles = StyleSheet.create({
   },
   logoutText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12.5,
+    fontWeight: 'bold',
+  },
+  settingsUserBtn: {
+    backgroundColor: 'rgba(212, 175, 55, 0.25)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 175, 55, 0.6)',
+  },
+  settingsUserBtnText: {
+    color: '#FDE68A',
+    fontSize: 12.5,
     fontWeight: 'bold',
   },
   dateBar: {

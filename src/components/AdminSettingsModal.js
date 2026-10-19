@@ -31,7 +31,7 @@ import {
 } from '../services/storageService.js';
 import { sendInstantNotification } from '../services/notificationService.js';
 import { exportSurveyToPdf, printSurveyDirectly } from '../services/pdfService.js';
-import { getServerUrl, setServerUrl, testServerConnection } from '../config/apiConfig.js';
+import { getServerUrl, setServerUrl, testServerConnection, testSupabaseConnection } from '../config/apiConfig.js';
 import { syncWithCloud, getSyncState } from '../services/syncService.js';
 import { checkAndApplyAppUpdate, getUpdateInfo } from '../services/otaUpdateService.js';
 
@@ -122,9 +122,22 @@ export default function AdminSettingsModal({
 
   const handleTestConnection = async () => {
     setIsTestingServer(true);
+    const sbRes = await testSupabaseConnection();
+    if (sbRes.success) {
+      setIsTestingServer(false);
+      Alert.alert('سحابة Supabase نشطة 🟢', sbRes.message);
+      return;
+    }
     const res = await testServerConnection(serverUrlInput);
     setIsTestingServer(false);
-    Alert.alert(res.success ? 'اتصال ناجح 🟢' : 'فشل الاتصال 🔴', res.message);
+    if (sbRes.tablesMissing) {
+      Alert.alert('حالة سحابة Supabase ⚠️', sbRes.message);
+    } else {
+      Alert.alert(
+        res.success ? 'اتصال ناجح 🟢' : 'فحص الاتصال السحابي',
+        `Supabase: ${sbRes.message}\n\nالخادم الاحتياطي: ${res.message}`
+      );
+    }
   };
 
   const handleManualSync = async () => {
@@ -237,6 +250,11 @@ export default function AdminSettingsModal({
     } else {
       Alert.alert('تأكيد الحذف', confirmMessage, [
         { text: 'إلغاء', style: 'cancel' },
+        { text: 'نعم، احذف', style: 'destructive', onPress: execute },
+      ]);
+    }
+  };
+
   // فتح نافذة تعديل بيانات العضو
   const handleOpenEditMember = (member) => {
     setEditingMember(member);
@@ -1312,6 +1330,20 @@ export default function AdminSettingsModal({
                     )}
                   </View>
 
+                  {/* بطاقة Supabase السحابية المباشرة */}
+                  <View style={styles.supabaseCard}>
+                    <View style={styles.supabaseHeader}>
+                      <Text style={styles.supabaseTitle}>⚡ قاعدة بيانات Supabase (سحابية لحظية)</Text>
+                      <View style={styles.supabaseBadge}>
+                        <Text style={styles.supabaseBadgeText}>نشطة</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.supabaseUrl}>https://ecgofdogiwnkokvpnxpl.supabase.co</Text>
+                    <Text style={styles.supabaseDesc}>
+                      تتصل كافة أجهزة الفريق بقاعدة البيانات هذه مباشرة دون الحاجة لأي خوادم وسيطة، وتتزامن القراءات والمهام في أجزاء من الثانية عبر Realtime.
+                    </Text>
+                  </View>
+
                   {/* إدخال رابط السيرفر */}
                   <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>رابط الخادم السحابي (Server URL):</Text>
@@ -1635,6 +1667,50 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: 'bold',
+  },
+  supabaseCard: {
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+  },
+  supabaseHeader: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  supabaseTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#38BDF8',
+  },
+  supabaseBadge: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  supabaseBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  supabaseUrl: {
+    fontSize: 11,
+    color: '#94A3B8',
+    textAlign: 'left',
+    direction: 'ltr',
+    marginBottom: 6,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  supabaseDesc: {
+    fontSize: 11,
+    color: '#CBD5E1',
+    lineHeight: 16,
+    textAlign: 'right',
   },
   otaInfoBox: {
     backgroundColor: '#F1F5F9',

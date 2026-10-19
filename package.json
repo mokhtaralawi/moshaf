@@ -28,6 +28,7 @@
     "web": "expo start --web",
     "build:web": "expo export -p web",
     "start:prod": "node server.js",
+    "db:supabase": "node scripts/upload_to_supabase.js",
     "lint": "expo lint"
   },
   "private": true,
