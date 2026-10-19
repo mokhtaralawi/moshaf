@@ -120,7 +120,7 @@ export const saveReaders = async (readers) => {
     const normalized = readers.map((r, idx) => normalizeReader(r, idx));
     const jsonValue = JSON.stringify(normalized);
     await AsyncStorage.setItem(STORAGE_KEYS.READERS_LIST, jsonValue);
-    await enqueueSyncAction('SYNC_READERS', { readersCount: normalized.length });
+    await enqueueSyncAction('SAVE_READERS', { readers: normalized });
     return true;
   } catch (error) {
     console.error('خطأ أثناء حفظ قائمة القراء:', error);
@@ -366,6 +366,7 @@ export const saveSettings = async (settings) => {
   try {
     const jsonValue = JSON.stringify(settings);
     await AsyncStorage.setItem(STORAGE_KEYS.WIRD_SETTINGS, jsonValue);
+    await enqueueSyncAction('SAVE_SETTINGS', settings);
     return true;
   } catch (error) {
     console.error('خطأ أثناء حفظ الإعدادات:', error);
@@ -504,6 +505,12 @@ export const updateReaderDailyStatus = async (dateKey, readerId, status) => {
       timestamp: new Date().toISOString(),
     };
     await AsyncStorage.setItem(STORAGE_KEYS.DAILY_STATUSES, JSON.stringify(allStatuses));
+    await enqueueSyncAction('UPDATE_WIRD_STATUS', {
+      dateKey,
+      readerId,
+      status,
+      timestamp: new Date().toISOString(),
+    });
     return allStatuses[dateKey];
   } catch (error) {
     console.error('خطأ أثناء تحديث حالة القارئ:', error);
@@ -551,6 +558,7 @@ export const createSurvey = async (question) => {
 
     updatedSurveys.unshift(newSurvey);
     await AsyncStorage.setItem(STORAGE_KEYS.SURVEYS, JSON.stringify(updatedSurveys));
+    await enqueueSyncAction('CREATE_SURVEY', { survey: newSurvey });
     return newSurvey;
   } catch (error) {
     console.error('خطأ أثناء إنشاء الاستبيان:', error);
@@ -583,6 +591,7 @@ export const submitSurveyVote = async (surveyId, readerId, vote) => {
     };
 
     await AsyncStorage.setItem(STORAGE_KEYS.SURVEYS, JSON.stringify(surveys));
+    await enqueueSyncAction('VOTE_SURVEY', { surveyId, userId: readerId, vote });
     return surveys[surveyIndex];
   } catch (error) {
     console.error('خطأ أثناء تسجيل إجابة الاستبيان:', error);
@@ -601,6 +610,7 @@ export const closeSurvey = async (surveyId) => {
     const surveys = JSON.parse(jsonValue);
     const updated = surveys.map((s) => (s.id === surveyId ? { ...s, active: false } : s));
     await AsyncStorage.setItem(STORAGE_KEYS.SURVEYS, JSON.stringify(updated));
+    await enqueueSyncAction('CLOSE_SURVEY', { surveyId });
     return true;
   } catch (error) {
     console.error('خطأ أثناء إغلاق الاستبيان:', error);
@@ -638,6 +648,7 @@ export const addAnnouncement = async (title, message) => {
 
     const updated = [newAnn, ...list].slice(0, 10); // الاحتفاظ بآخر 10 إعلانات
     await AsyncStorage.setItem(STORAGE_KEYS.ANNOUNCEMENTS, JSON.stringify(updated));
+    await enqueueSyncAction('ADD_ANNOUNCEMENT', { announcement: newAnn });
     return updated;
   } catch (error) {
     console.error('خطأ أثناء إضافة إعلان:', error);
@@ -668,7 +679,7 @@ export const loadTasks = async () => {
 export const saveTasks = async (tasks) => {
   try {
     await AsyncStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(tasks));
-    await enqueueSyncAction('SAVE_TASKS', { count: tasks.length });
+    await enqueueSyncAction('SAVE_TASKS', { tasks });
     return true;
   } catch (error) {
     console.error('خطأ أثناء حفظ التكاليف:', error);
@@ -696,6 +707,7 @@ export const createTask = async ({ title, description, category, targetCount, un
     };
     const updated = [...tasks, newTask];
     await saveTasks(updated);
+    await enqueueSyncAction('CREATE_TASK', { task: newTask });
     return { success: true, task: newTask };
   } catch (e) {
     console.error('خطأ أثناء إنشاء التكليف:', e);
@@ -711,6 +723,7 @@ export const deleteTask = async (taskId) => {
     const tasks = await loadTasks();
     const updated = tasks.filter((t) => t.id !== taskId);
     await saveTasks(updated);
+    await enqueueSyncAction('DELETE_TASK', { taskId });
     return true;
   } catch (e) {
     console.error('خطأ أثناء حذف التكليف:', e);
@@ -763,12 +776,13 @@ export const submitUserTask = async (dateKey, taskId, userId, status, excuseReas
     }
 
     // إدراج العملية في طابور المزامنة التلقائية (Outbox Queue)
-    await enqueueSyncAction('TASK_SUBMISSION', {
+    await enqueueSyncAction('SUBMIT_TASK', {
       dateKey,
       taskId,
-      userId,
+      readerId: userId,
       status,
-      excuseReason: excuseReason || '',
+      reason: excuseReason || '',
+      timestamp: new Date().toISOString(),
     });
 
     return all[dateKey];
@@ -800,7 +814,7 @@ export const saveMotivationalMessage = async (msg) => {
   try {
     const cleanMsg = (msg || '').trim() || DEFAULT_MOTIVATIONAL_MSG;
     await AsyncStorage.setItem(STORAGE_KEYS.MOTIVATIONAL_MSG, cleanMsg);
-    await enqueueSyncAction('UPDATE_MOTIVATIONAL_MSG', { message: cleanMsg });
+    await enqueueSyncAction('SAVE_MOTIVATIONAL_MSG', { message: cleanMsg });
     return cleanMsg;
   } catch (error) {
     console.error('خطأ أثناء حفظ رسالة التحفيز:', error);

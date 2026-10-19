@@ -238,20 +238,6 @@ export default function LoginScreen({ onLoginSuccess }) {
                 <Text style={styles.loginBtnText}>دخول إلى النظام 🌟</Text>
               )}
             </TouchableOpacity>
-
-            {/* بطاقة التلميح والتوجيه */}
-            <View style={styles.hintsCard}>
-              <Text style={styles.hintTitle}>💡 إرشادات سريعة للدخول:</Text>
-              <Text style={styles.hintItem}>
-                • <Text style={styles.hintBold}>الأعضاء والقراء:</Text> كلمة المرور الافتراضية لأول دخول هي <Text style={styles.hintCode}>123456</Text>.
-              </Text>
-              <Text style={styles.hintItem}>
-                • <Text style={styles.hintBold}>مدير المجموعة:</Text> اسم المستخدم <Text style={styles.hintCode}>admin</Text> وكلمة المرور <Text style={styles.hintCode}>123</Text>.
-              </Text>
-              <Text style={styles.hintItem}>
-                • يتم حفظ الجلسة على جهازك وتعمل جميع التكاليف في وضع أوفلاين دون الحاجة لشبكة.
-              </Text>
-            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -286,14 +272,13 @@ export default function LoginScreen({ onLoginSuccess }) {
                   style={styles.readerOption}
                   onPress={() => {
                     setIdentifier(r.username || r.name);
-                    setPassword('123456');
                     setIsHelperModalVisible(false);
                     setErrorMsg('');
                   }}
                   activeOpacity={0.7}
                 >
                   <View style={styles.readerOptionLeft}>
-                    <Text style={styles.defaultPassPill}>كلمة المرور الافتراضية: 123456</Text>
+                    <Text style={styles.selectMemberBadge}>اختيار 👈</Text>
                   </View>
                   <View style={styles.readerOptionRight}>
                     <Text style={styles.readerOptionName}>{r.name}</Text>
@@ -528,39 +513,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontSize: 14.5,
   },
-  hintsCard: {
-    marginTop: 18,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 5,
-  },
-  hintTitle: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#0F172A',
-    textAlign: 'right',
-    marginBottom: 2,
-  },
-  hintItem: {
-    fontSize: 11.5,
-    color: '#475569',
-    textAlign: 'right',
-    lineHeight: 18,
-  },
-  hintBold: {
-    fontWeight: 'bold',
-    color: '#1E293B',
-  },
-  hintCode: {
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: 'bold',
-    color: '#059669',
-    backgroundColor: '#E6FFFA',
-    paddingHorizontal: 4,
-  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
@@ -634,15 +586,16 @@ const styles = StyleSheet.create({
   readerOptionLeft: {
     alignItems: 'flex-start',
   },
-  defaultPassPill: {
-    fontSize: 9.5,
-    color: '#059669',
+  selectMemberBadge: {
+    fontSize: 11,
+    color: '#065F46',
     backgroundColor: '#ECFDF5',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#A7F3D0',
+    fontWeight: '600',
   },
   emptyHelpBox: {
     padding: 24,

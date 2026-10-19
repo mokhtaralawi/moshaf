@@ -31,6 +31,9 @@ import {
 } from '../services/storageService.js';
 import { sendInstantNotification } from '../services/notificationService.js';
 import { exportSurveyToPdf, printSurveyDirectly } from '../services/pdfService.js';
+import { getServerUrl, setServerUrl, testServerConnection } from '../config/apiConfig.js';
+import { syncWithCloud, getSyncState } from '../services/syncService.js';
+import { checkAndApplyAppUpdate, getUpdateInfo } from '../services/otaUpdateService.js';
 
 export default function AdminSettingsModal({
   visible,
@@ -80,6 +83,14 @@ export default function AdminSettingsModal({
   const [isCreatingSurvey, setIsCreatingSurvey] = useState(false);
   const [isExportingSurveyPdf, setIsExportingSurveyPdf] = useState(false);
 
+  // السحابة والتحديثات الهوائية
+  const [serverUrlInput, setServerUrlInput] = useState('');
+  const [isTestingServer, setIsTestingServer] = useState(false);
+  const [isSyncingNow, setIsSyncingNow] = useState(false);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [syncStatusData, setSyncStatusData] = useState(getSyncState());
+  const [appUpdateInfo, setAppUpdateInfo] = useState(getUpdateInfo());
+
   useEffect(() => {
     if (visible) {
       setCustomJuz(currentJuzCount);
@@ -87,8 +98,42 @@ export default function AdminSettingsModal({
       fetchTasks();
       fetchAdmins();
       fetchMotivational();
+      fetchCloudSettings();
     }
   }, [visible, currentJuzCount]);
+
+  const fetchCloudSettings = async () => {
+    const url = await getServerUrl();
+    setServerUrlInput(url);
+    setSyncStatusData(getSyncState());
+    setAppUpdateInfo(getUpdateInfo());
+  };
+
+  const handleSaveServerUrl = async () => {
+    await setServerUrl(serverUrlInput);
+    Alert.alert('تم حفظ رابط السحابة ✅', 'تم تحديث رابط الخادم السحابي للمزامنة بنجاح.');
+  };
+
+  const handleTestConnection = async () => {
+    setIsTestingServer(true);
+    const res = await testServerConnection(serverUrlInput);
+    setIsTestingServer(false);
+    Alert.alert(res.success ? 'اتصال ناجح 🟢' : 'فشل الاتصال 🔴', res.message);
+  };
+
+  const handleManualSync = async () => {
+    setIsSyncingNow(true);
+    const res = await syncWithCloud(true);
+    setIsSyncingNow(false);
+    setSyncStatusData(getSyncState());
+    Alert.alert(res.success ? 'تمت المزامنة بنجاح ✅' : 'تنبيه المزامنة ⚠️', res.message || 'تمت محاولة المزامنة مع السحابة.');
+  };
+
+  const handleCheckOtaUpdate = async () => {
+    setIsCheckingUpdate(true);
+    await checkAndApplyAppUpdate(true);
+    setIsCheckingUpdate(false);
+  };
 
   const fetchMotivational = async () => {
     const msg = await loadMotivationalMessage();
@@ -430,58 +475,74 @@ export default function AdminSettingsModal({
           </View>
 
           {/* أزرار التبويبات (Tabs) */}
-          <View style={styles.tabBar}>
-            <TouchableOpacity
-              style={[styles.tabItem, activeTab === 'wird' && styles.activeTabItem]}
-              onPress={() => setActiveTab('wird')}
-              activeOpacity={0.8}
+          <View style={styles.tabBarWrapper}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.tabBar}
             >
-              <Text style={[styles.tabItemText, activeTab === 'wird' && styles.activeTabText]}>
-                📖 الورد
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tabItem, activeTab === 'tasks' && styles.activeTabItem]}
-              onPress={() => setActiveTab('tasks')}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.tabItemText, activeTab === 'tasks' && styles.activeTabText]}>
-                ⭐ التكاليف
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tabItem, activeTab === 'accounts' && styles.activeTabItem]}
-              onPress={() => setActiveTab('accounts')}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.tabItemText, activeTab === 'accounts' && styles.activeTabText]}>
-                👥 الحسابات
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tabItem, activeTab === 'notifications' && styles.activeTabItem]}
-              onPress={() => setActiveTab('notifications')}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[styles.tabItemText, activeTab === 'notifications' && styles.activeTabText]}
+              <TouchableOpacity
+                style={[styles.tabItem, activeTab === 'wird' && styles.activeTabItem]}
+                onPress={() => setActiveTab('wird')}
+                activeOpacity={0.8}
               >
-                📢 الإشعارات
-              </Text>
-            </TouchableOpacity>
+                <Text style={[styles.tabItemText, activeTab === 'wird' && styles.activeTabText]}>
+                  📖 الورد
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.tabItem, activeTab === 'survey' && styles.activeTabItem]}
-              onPress={() => setActiveTab('survey')}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.tabItemText, activeTab === 'survey' && styles.activeTabText]}>
-                📋 الاستبيان
-              </Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tabItem, activeTab === 'tasks' && styles.activeTabItem]}
+                onPress={() => setActiveTab('tasks')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.tabItemText, activeTab === 'tasks' && styles.activeTabText]}>
+                  ⭐ التكاليف
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.tabItem, activeTab === 'accounts' && styles.activeTabItem]}
+                onPress={() => setActiveTab('accounts')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.tabItemText, activeTab === 'accounts' && styles.activeTabText]}>
+                  👥 الحسابات
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.tabItem, activeTab === 'notifications' && styles.activeTabItem]}
+                onPress={() => setActiveTab('notifications')}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[styles.tabItemText, activeTab === 'notifications' && styles.activeTabText]}
+                >
+                  📢 الإشعارات
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.tabItem, activeTab === 'survey' && styles.activeTabItem]}
+                onPress={() => setActiveTab('survey')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.tabItemText, activeTab === 'survey' && styles.activeTabText]}>
+                  📋 الاستبيان
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.tabItem, activeTab === 'cloud' && styles.activeTabItem]}
+                onPress={() => setActiveTab('cloud')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.tabItemText, activeTab === 'cloud' && styles.activeTabText]}>
+                  ☁️ السحابة والتحديث
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
 
           <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
@@ -899,7 +960,7 @@ export default function AdminSettingsModal({
                 <View style={styles.sectionCard}>
                   <Text style={styles.sectionTitle}>👤 حسابات الأعضاء والقراء ({readers.length}):</Text>
                   <Text style={styles.sectionDesc}>
-                    كلمة المرور الافتراضية لجميع الأعضاء هي (123456) ولهم خيار تغييرها عند أول تسجيل دخول.
+                    يمكن لكل عضو تغيير وتأمين كلمة المرور الخاصة به عند تسجيل الدخول.
                   </Text>
 
                   {readers.map((r, idx) => (
@@ -912,9 +973,9 @@ export default function AdminSettingsModal({
                         >
                           <Text style={styles.deleteTaskBtnText}>حذف 🗑️</Text>
                         </TouchableOpacity>
-                        <View style={styles.defaultPassBadge}>
-                          <Text style={styles.defaultPassBadgeText}>
-                            {r.isFirstLogin === false ? '🔒 مخصص' : '🔑 123456'}
+                        <View style={[styles.defaultPassBadge, r.isFirstLogin === false && styles.customPassBadge]}>
+                          <Text style={[styles.defaultPassBadgeText, r.isFirstLogin === false && styles.customPassBadgeText]}>
+                            {r.isFirstLogin === false ? '🔒 كلمة مرور مخصصة' : '🔑 كلمة مرور أولية'}
                           </Text>
                         </View>
                       </View>
@@ -1172,6 +1233,132 @@ export default function AdminSettingsModal({
                 )}
               </View>
             )}
+
+            {/* 6. تبويب السحابة والتحديثات الهوائية */}
+            {activeTab === 'cloud' && (
+              <View style={styles.tabContent}>
+                {/* بطاقة خادم المزامنة السحابي */}
+                <View style={styles.sectionCard}>
+                  <Text style={styles.sectionTitle}>☁️ خادم المزامنة وقاعدة البيانات المركزية:</Text>
+                  <Text style={styles.sectionDesc}>
+                    عند ربط التطبيق بخادم سحابي، تنعكس كافة تعديلات الورد، التكاليف، والاستبيانات تلقائياً ولحظياً عند جميع أجهزة الفريق.
+                  </Text>
+
+                  {/* شارة الحالة اللحظية */}
+                  <View
+                    style={[
+                      styles.cloudStatusBanner,
+                      syncStatusData.isOnline ? styles.cloudBannerOnline : styles.cloudBannerOffline,
+                    ]}
+                  >
+                    <Text style={styles.cloudBannerText}>
+                      {syncStatusData.isOnline
+                        ? '🟢 متصل بالإنترنت ومحرك المزامنة نشط'
+                        : '🔴 غير متصل بالإنترنت (الوضع المحلي نشط)'}
+                    </Text>
+                    {syncStatusData.lastSyncedAt && (
+                      <Text style={styles.cloudBannerSub}>
+                        آخر مزامنة ناجحة: {new Date(syncStatusData.lastSyncedAt).toLocaleTimeString('ar-SA')}
+                      </Text>
+                    )}
+                    {syncStatusData.pendingCount > 0 && (
+                      <Text style={styles.cloudBannerPending}>
+                        ⏳ يوجد {syncStatusData.pendingCount} عملية محلية في الانتظار للإرسال
+                      </Text>
+                    )}
+                  </View>
+
+                  {/* إدخال رابط السيرفر */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>رابط الخادم السحابي (Server URL):</Text>
+                    <TextInput
+                      style={[styles.textInput, { direction: 'ltr', textAlign: 'left' }]}
+                      placeholder="https://your-app.onrender.com أو http://localhost:3000"
+                      placeholderTextColor="#94A3B8"
+                      value={serverUrlInput}
+                      onChangeText={setServerUrlInput}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    <Text style={styles.helperText}>
+                      * في الويب: يكتشف التطبيق الرابط تلقائياً. في الهواتف (APK): ضع رابط الاستضافة السحابية الخاصة بك.
+                    </Text>
+                  </View>
+
+                  {/* أزرار الحفظ والفحص */}
+                  <View style={styles.cloudBtnRow}>
+                    <TouchableOpacity
+                      style={[styles.cloudActionBtn, styles.testBtn, isTestingServer && styles.btnDisabled]}
+                      onPress={handleTestConnection}
+                      disabled={isTestingServer}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.cloudBtnText}>
+                        {isTestingServer ? 'جاري الفحص...' : '🔍 فحص الاتصال'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.cloudActionBtn, styles.saveServerBtn]}
+                      onPress={handleSaveServerUrl}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.cloudBtnText}>💾 حفظ الرابط</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* زر المزامنة الفورية الشاملة */}
+                  <TouchableOpacity
+                    style={[styles.manualSyncBtn, isSyncingNow && styles.btnDisabled]}
+                    onPress={handleManualSync}
+                    disabled={isSyncingNow}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.manualSyncBtnText}>
+                      {isSyncingNow ? '🔄 جاري المزامنة مع السحابة...' : '🔄 مزامنة فورية شاملة الآن'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* بطاقة التحديثات الهوائية Over-The-Air */}
+                <View style={styles.sectionCard}>
+                  <Text style={styles.sectionTitle}>🚀 التحديثات الهوائية الفورية (EAS Over-The-Air):</Text>
+                  <Text style={styles.sectionDesc}>
+                    تتيح لك هذه الميزة إرسال أي تعديل على شاشات وكود التطبيق لجميع أجهزة الفريق فوراً، دون الحاجة لإعادة إنشاء أو تثبيت ملف APK من جديد.
+                  </Text>
+
+                  <View style={styles.otaInfoBox}>
+                    <View style={styles.otaInfoRow}>
+                      <Text style={styles.otaInfoLabel}>قناة التحديث (Channel):</Text>
+                      <Text style={styles.otaInfoVal}>{appUpdateInfo.channel || 'preview'}</Text>
+                    </View>
+                    <View style={styles.otaInfoRow}>
+                      <Text style={styles.otaInfoLabel}>إصدار الـ Runtime:</Text>
+                      <Text style={styles.otaInfoVal}>{appUpdateInfo.runtimeVersion || '1.0.0'}</Text>
+                    </View>
+                    <View style={styles.otaInfoRow}>
+                      <Text style={styles.otaInfoLabel}>حالة البيئة:</Text>
+                      <Text style={styles.otaInfoVal}>
+                        {appUpdateInfo.isSupported
+                          ? 'جاهز للتحديثات الهوائية ✅'
+                          : 'نسخة الويب (تحديث عبر المتصفح) 🌐'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.checkOtaBtn, isCheckingUpdate && styles.btnDisabled]}
+                    onPress={handleCheckOtaUpdate}
+                    disabled={isCheckingUpdate}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.checkOtaBtnText}>
+                      {isCheckingUpdate ? '⏳ جاري فحص السحابة...' : '🚀 فحص وتنزيل التحديثات الهوائية الآن'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
@@ -1231,18 +1418,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
-  tabBar: {
-    flexDirection: 'row-reverse',
-    backgroundColor: '#E2E8F0',
+  tabBarWrapper: {
     marginHorizontal: 16,
     marginTop: 14,
     marginBottom: 8,
+  },
+  tabBar: {
+    flexDirection: 'row-reverse',
+    backgroundColor: '#E2E8F0',
     borderRadius: 14,
     padding: 4,
+    gap: 6,
   },
   tabItem: {
-    flex: 1,
     paddingVertical: 9,
+    paddingHorizontal: 14,
     alignItems: 'center',
     borderRadius: 10,
   },
@@ -1256,6 +1446,116 @@ const styles = StyleSheet.create({
   },
   activeTabText: {
     color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  cloudStatusBanner: {
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  cloudBannerOnline: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+    borderWidth: 1,
+  },
+  cloudBannerOffline: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+    borderWidth: 1,
+  },
+  cloudBannerText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#065F46',
+    textAlign: 'right',
+  },
+  cloudBannerSub: {
+    fontSize: 11,
+    color: '#047857',
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  cloudBannerPending: {
+    fontSize: 11,
+    color: '#B45309',
+    textAlign: 'right',
+    marginTop: 4,
+    fontWeight: 'bold',
+  },
+  helperText: {
+    fontSize: 11,
+    color: '#64748B',
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  cloudBtnRow: {
+    flexDirection: 'row-reverse',
+    gap: 10,
+    marginTop: 10,
+    marginBottom: 12,
+  },
+  cloudActionBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  testBtn: {
+    backgroundColor: '#0284C7',
+  },
+  saveServerBtn: {
+    backgroundColor: '#059669',
+  },
+  cloudBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  manualSyncBtn: {
+    backgroundColor: '#D97706',
+    paddingVertical: 13,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  manualSyncBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  otaInfoBox: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  otaInfoRow: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    paddingVertical: 5,
+  },
+  otaInfoLabel: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  otaInfoVal: {
+    fontSize: 12,
+    color: '#0F172A',
+    fontWeight: 'bold',
+  },
+  checkOtaBtn: {
+    backgroundColor: '#7C3AED',
+    paddingVertical: 13,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  checkOtaBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
     fontWeight: 'bold',
   },
   scrollArea: {
@@ -1834,17 +2134,24 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   defaultPassBadge: {
-    backgroundColor: '#ECFDF5',
+    backgroundColor: '#FEF3C7',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: '#FDE68A',
   },
   defaultPassBadgeText: {
     fontSize: 10.5,
-    color: '#065F46',
+    color: '#92400E',
     fontWeight: 'bold',
+  },
+  customPassBadge: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  customPassBadgeText: {
+    color: '#065F46',
   },
   accountLeftActions: {
     flexDirection: 'row',

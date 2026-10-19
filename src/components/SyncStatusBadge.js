@@ -83,7 +83,7 @@ export default function SyncStatusBadge({ compact = false }) {
       >
         <Text style={styles.dot}>🟠</Text>
         <Text style={[styles.text, styles.pendingText]}>
-          بانتظار المزامنة ({syncState.pendingCount})
+          {compact ? `معلق (${syncState.pendingCount})` : `بانتظار المزامنة (${syncState.pendingCount})`}
         </Text>
       </TouchableOpacity>
     );

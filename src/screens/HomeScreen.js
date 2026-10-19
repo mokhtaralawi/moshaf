@@ -32,6 +32,7 @@ import ReminderModal from '../components/ReminderModal';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import AdminSettingsModal from '../components/AdminSettingsModal';
 import SyncStatusBadge from '../components/SyncStatusBadge';
+import { subscribeSyncStatus } from '../services/syncService';
 
 export default function HomeScreen({ onLogout }) {
   const [readers, setReaders] = useState([]);
@@ -55,9 +56,15 @@ export default function HomeScreen({ onLogout }) {
   const todayArabicDate = getFormattedArabicDate(0);
   const todayHijriDate = getFormattedHijriDate(0);
 
-  // تحميل البيانات المحفوظة عند فتح التطبيق
+  // تحميل البيانات المحفوظة عند فتح التطبيق ومتابعة التحديثات اللحظية من السحابة
   useEffect(() => {
     initApp();
+    const unsubscribe = subscribeSyncStatus((status) => {
+      if (status.hasRemoteUpdates) {
+        initApp();
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
   const initApp = async () => {
@@ -201,7 +208,7 @@ export default function HomeScreen({ onLogout }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#064E3B" />
+      <StatusBar barStyle="light-content" backgroundColor="#064E3B" translucent={false} />
 
       {/* قائمة الصفحة الرئيسية الموحدة: الرأس الترحيبي وأدوات التحكم وقائمة القراء تتحرك كلها مع السكرول بار */}
       <FlatList
@@ -227,11 +234,11 @@ export default function HomeScreen({ onLogout }) {
           <View>
             {/* الرأس الفاخر (Emerald Islamic Header) - المربع الترحيبي قابل للحركة مع التمرير */}
             <View style={styles.header}>
-              {/* شريط الإدارة العلوي (صلاحيات المدير + تغيير كلمة السر + خروج) */}
+              {/* شريط الإدارة العلوي (صلاحيات المدير + الإعدادات + كلمة المرور + خروج) */}
               <View style={styles.adminBar}>
                 <View style={styles.adminBadgeRow}>
                   <View style={styles.adminBadge}>
-                    <Text style={styles.adminBadgeText}>👑 لوحة تحكم المدير</Text>
+                    <Text style={styles.adminBadgeText}>👑 لوحة المدير</Text>
                   </View>
                   <SyncStatusBadge compact />
                 </View>
@@ -242,7 +249,7 @@ export default function HomeScreen({ onLogout }) {
                     onPress={() => setIsAdminSettingsVisible(true)}
                     activeOpacity={0.8}
                   >
-                    <Text style={styles.settingsBtnText}>⚙️ الإعدادات والتحكم</Text>
+                    <Text style={styles.settingsBtnText}>⚙️ الإعدادات</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -469,9 +476,9 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#064E3B', // زمردي ملكي داكن
-    paddingTop: 14,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ? StatusBar.currentHeight + 8 : 28) : 12,
     paddingBottom: 18,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     borderBottomLeftRadius: 26,
     borderBottomRightRadius: 26,
     shadowColor: '#064E3B',
@@ -486,45 +493,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
-    paddingBottom: 8,
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.12)',
   },
   adminBadgeRow: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   adminBadge: {
     backgroundColor: 'rgba(217, 119, 6, 0.25)',
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#F59E0B',
   },
   adminBadgeText: {
     color: '#FDE68A',
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: 'bold',
   },
   adminActions: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    flexShrink: 1,
   },
   adminActionBtn: {
     backgroundColor: 'rgba(255, 255, 255, 0.14)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4.5,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   adminActionText: {
     color: '#ECFDF5',
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '600',
   },
   settingsBtn: {
@@ -533,7 +543,7 @@ const styles = StyleSheet.create({
   },
   settingsBtnText: {
     color: '#FDE68A',
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: 'bold',
   },
   logoutBtn: {
@@ -542,7 +552,7 @@ const styles = StyleSheet.create({
   },
   logoutBtnText: {
     color: '#FECACA',
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: 'bold',
   },
   headerTopRow: {

@@ -69,8 +69,7 @@ export default function FirstLoginModal({
 
           <View style={styles.noticeBox}>
             <Text style={styles.noticeText}>
-              تم تعيين كلمة المرور الافتراضية لحسابك{' '}
-              <Text style={styles.boldCode}>123456</Text>. لتأمين حسابك، نوصي بتعيين كلمة مرور شخصية خاصة بك، أو يمكنك المتابعة بكلمة المرور الحالية.
+              مرحباً بك! لتأمين حسابك، نوصي بتعيين كلمة مرور شخصية خاصة بك، أو يمكنك المتابعة بكلمة المرور الحالية.
             </Text>
           </View>
 

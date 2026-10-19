@@ -13,6 +13,7 @@
     "expo-print": "~58.0.6",
     "expo-sharing": "~58.0.19",
     "expo-status-bar": "~58.0.3",
+    "expo-updates": "~58.0.17",
     "express": "^5.3.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -25,7 +26,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "build:web": "expo export -p web",
-    "start:prod": "node server.js"
+    "start:prod": "node server.js",
+    "lint": "expo lint"
   },
   "private": true,
   "devDependencies": {

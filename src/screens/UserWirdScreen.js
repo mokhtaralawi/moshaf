@@ -35,6 +35,7 @@ import {
   getFormattedHijriDate,
 } from '../utils/wirdCalculator';
 import SyncStatusBadge from '../components/SyncStatusBadge';
+import { subscribeSyncStatus } from '../services/syncService';
 
 export default function UserWirdScreen({ currentUser, onLogout }) {
   const [currentStatus, setCurrentStatus] = useState('pending'); // 'read' | 'pending' | 'excused'
@@ -74,6 +75,12 @@ export default function UserWirdScreen({ currentUser, onLogout }) {
 
   useEffect(() => {
     loadData();
+    const unsubscribe = subscribeSyncStatus((status) => {
+      if (status.hasRemoteUpdates) {
+        loadData();
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
   const loadData = async () => {
@@ -187,7 +194,7 @@ export default function UserWirdScreen({ currentUser, onLogout }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#064E3B" />
+      <StatusBar barStyle="light-content" backgroundColor="#064E3B" translucent={false} />
 
       {/* الرأس الفاخر */}
       <View style={styles.header}>
@@ -664,8 +671,8 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#064E3B',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? 20 : 10,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ? StatusBar.currentHeight + 8 : 28) : 10,
     paddingBottom: 20,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,

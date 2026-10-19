@@ -39,3 +39,11 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# binary packages
+*.apk
+*.aab
+
+# local server database
+/data/
+
