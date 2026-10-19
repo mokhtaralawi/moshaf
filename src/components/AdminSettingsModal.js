@@ -10,6 +10,8 @@ import {
   Alert,
   Platform,
   KeyboardAvoidingView,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import {
   loadActiveSurvey,
@@ -513,9 +515,13 @@ export default function AdminSettingsModal({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.modalOverlay}
       >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <View style={styles.backdropArea} />
+        </TouchableWithoutFeedback>
+
         <View style={styles.modalContent}>
           {/* رأس النافذة */}
           <View style={styles.header}>
@@ -600,7 +606,13 @@ export default function AdminSettingsModal({
             </ScrollView>
           </View>
 
-          <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={styles.scrollArea}
+            contentContainerStyle={styles.scrollAreaContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+          >
             {/* 1. تبويب الورد والأعضاء */}
             {activeTab === 'wird' && (
               <View style={styles.tabContent}>
@@ -1440,7 +1452,13 @@ export default function AdminSettingsModal({
 
         {/* مودال تعديل بيانات حساب العضو (الاسم، اسم المستخدم، كلمة المرور) */}
         <Modal visible={!!editingMember} transparent animationType="fade" onRequestClose={() => setEditingMember(null)}>
-          <View style={styles.editMemberOverlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.editMemberOverlay}
+          >
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+              <View style={StyleSheet.absoluteFillObject} />
+            </TouchableWithoutFeedback>
             <View style={styles.editMemberCard}>
               <View style={styles.editMemberHeader}>
                 <Text style={styles.editMemberTitle}>✏️ تعديل بيانات القارئ والحساب</Text>
@@ -1503,7 +1521,7 @@ export default function AdminSettingsModal({
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
       </KeyboardAvoidingView>
     </Modal>
@@ -1516,11 +1534,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(6, 78, 59, 0.7)',
     justifyContent: 'flex-end',
   },
+  backdropArea: {
+    flex: 1,
+  },
   modalContent: {
     backgroundColor: '#F8FAF8',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     maxHeight: '92%',
+    flex: 1,
     paddingBottom: 24,
     borderWidth: 1.5,
     borderColor: '#D1FAE5',
@@ -1747,8 +1769,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   scrollArea: {
+    flex: 1,
     paddingHorizontal: 16,
     paddingTop: 8,
+  },
+  scrollAreaContent: {
+    flexGrow: 1,
+    paddingBottom: 40,
   },
   tabContent: {
     paddingBottom: 20,

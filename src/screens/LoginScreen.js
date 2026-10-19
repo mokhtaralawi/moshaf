@@ -13,6 +13,8 @@ import {
   Platform,
   ActivityIndicator,
   Modal,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import {
   authenticateUser,
@@ -152,10 +154,15 @@ export default function LoginScreen({ onLoginSuccess }) {
       </View>
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardContainer}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
           {/* بطاقة تسجيل الدخول الموحدة */}
           <View style={styles.card}>
             <View style={styles.cardHeader}>
@@ -244,7 +251,14 @@ export default function LoginScreen({ onLoginSuccess }) {
 
       {/* نافذة المساعدة لاختيار اسم القارئ */}
       <Modal visible={isHelperModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <View style={StyleSheet.absoluteFillObject} />
+          </TouchableWithoutFeedback>
+
           <View style={styles.helperCard}>
             <View style={styles.helperHeader}>
               <Text style={styles.helperTitle}>اختر اسمك من قائمة الأعضاء</Text>
@@ -265,7 +279,11 @@ export default function LoginScreen({ onLoginSuccess }) {
               textAlign="right"
             />
 
-            <ScrollView style={styles.readersListScroll}>
+            <ScrollView
+              style={styles.readersListScroll}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+            >
               {filteredReaders.map((r) => (
                 <TouchableOpacity
                   key={r.id}
@@ -294,7 +312,7 @@ export default function LoginScreen({ onLoginSuccess }) {
               )}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* نافذة خيار تغيير كلمة المرور عند أول تسجيل دخول */}

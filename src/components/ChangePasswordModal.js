@@ -9,6 +9,9 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { loadAdminCredentials, saveAdminCredentials } from '../services/storageService';
 
@@ -76,10 +79,20 @@ export default function ChangePasswordModal({ visible, onClose }) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.modalOverlay}
       >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <View style={StyleSheet.absoluteFillObject} />
+        </TouchableWithoutFeedback>
+
         <View style={styles.modalCard}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            contentContainerStyle={styles.scrollContent}
+          >
           {/* رأس النافذة */}
           <View style={styles.header}>
             <View style={styles.iconCircle}>
@@ -162,9 +175,10 @@ export default function ChangePasswordModal({ visible, onClose }) {
               <Text style={styles.cancelBtnText}>إلغاء</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+        </ScrollView>
+      </View>
+    </KeyboardAvoidingView>
+  </Modal>
   );
 }
 
@@ -179,6 +193,7 @@ const styles = StyleSheet.create({
   modalCard: {
     width: '100%',
     maxWidth: 440,
+    maxHeight: '90%',
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
     padding: 22,
@@ -189,6 +204,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 20,
     elevation: 8,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   header: {
     flexDirection: 'row-reverse',

@@ -12,6 +12,9 @@ import {
   Platform,
   Modal,
   TextInput,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import {
   loadDailyStatuses,
@@ -586,7 +589,14 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
 
       {/* نافذة تسجيل سبب الاعتذار الاختياري */}
       <Modal visible={Boolean(excuseModalTask)} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <View style={StyleSheet.absoluteFillObject} />
+          </TouchableWithoutFeedback>
+
           <View style={styles.excuseModalCard}>
             <View style={styles.excuseModalIcon}>
               <Text style={styles.excuseIconText}>✋</Text>
@@ -629,7 +639,7 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
               <Text style={styles.cancelExcuseBtnText}>تراجع</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* إشعار تحفيزي فاخر داخل التطبيق عند إتمام قراءة الورد اليومي */}

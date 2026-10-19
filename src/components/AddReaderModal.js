@@ -7,6 +7,11 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { getReaderWirdDetails } from '../utils/wirdCalculator';
 
@@ -71,8 +76,21 @@ export default function AddReaderModal({ visible, onClose, onSave, editingReader
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.modalOverlay}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <View style={StyleSheet.absoluteFillObject} />
+        </TouchableWithoutFeedback>
+
         <View style={styles.modalContent}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            contentContainerStyle={styles.scrollContent}
+          >
           {/* شريط العنوان التزييني */}
           <View style={styles.headerBar}>
             <View style={styles.headerIconBox}>
@@ -196,9 +214,10 @@ export default function AddReaderModal({ visible, onClose, onSave, editingReader
               <Text style={styles.cancelBtnText}>إلغاء</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </ScrollView>
       </View>
-    </Modal>
+    </KeyboardAvoidingView>
+  </Modal>
   );
 }
 
@@ -213,6 +232,7 @@ const styles = StyleSheet.create({
   modalContent: {
     width: '100%',
     maxWidth: 400,
+    maxHeight: '90%',
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
     padding: 22,
@@ -223,6 +243,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 16,
     elevation: 8,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   headerBar: {
     alignItems: 'center',

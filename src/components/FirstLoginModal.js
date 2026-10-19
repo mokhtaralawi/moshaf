@@ -8,6 +8,11 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 
 export default function FirstLoginModal({
@@ -57,8 +62,21 @@ export default function FirstLoginModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.overlay}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <View style={StyleSheet.absoluteFillObject} />
+        </TouchableWithoutFeedback>
+
         <View style={styles.card}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            contentContainerStyle={styles.scrollContent}
+          >
           {/* أيقونة القفل الفاخرة */}
           <View style={styles.iconCircle}>
             <Text style={styles.iconText}>🔐</Text>
@@ -149,9 +167,10 @@ export default function FirstLoginModal({
               </TouchableOpacity>
             </View>
           )}
-        </View>
+        </ScrollView>
       </View>
-    </Modal>
+    </KeyboardAvoidingView>
+  </Modal>
   );
 }
 
@@ -166,10 +185,10 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 380,
+    maxHeight: '90%',
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
     padding: 24,
-    alignItems: 'center',
     borderWidth: 2,
     borderColor: '#D4AF37', // ذهبي إسلامي
     shadowColor: '#000',
@@ -177,6 +196,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 10,
     elevation: 8,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    alignItems: 'center',
   },
   iconCircle: {
     width: 60,
