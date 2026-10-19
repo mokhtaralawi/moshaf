@@ -94,9 +94,9 @@ export default function ReminderModal({
             <View style={styles.headerIconBox}>
               <Text style={styles.headerIconText}>⏰</Text>
             </View>
-            <Text style={styles.modalTitle}>تحديد موعد التنبيه اليومي</Text>
+            <Text style={styles.modalTitle}>موعد التنبيه وتذكير المتأخرين</Text>
             <Text style={styles.modalSubtitle}>
-              حدد الساعة المناسبة لتذكيرك بقراءة وتوزيع الورد القرآني
+              حدد الوقت المناسب لتذكيرك بالورد ولظهور كشف القراء الذين لم يقرأوا في حساب الإدارة
             </Text>
           </View>
 
@@ -108,7 +108,7 @@ export default function ReminderModal({
           >
             <View style={styles.toggleRow}>
               <Text style={[styles.toggleTitle, enabled && styles.toggleTitleActive]}>
-                {enabled ? '🔔 التنبيه اليومي (مفعّل)' : '🔕 التنبيه اليومي (موقوف)'}
+                {enabled ? '🔔 التنبيه وتذكير المتأخرين (مفعّل)' : '🔕 التنبيه اليومي (موقوف)'}
               </Text>
               <View style={[styles.switchTrack, enabled && styles.switchTrackActive]}>
                 <View style={[styles.switchThumb, enabled && styles.switchThumbActive]} />
@@ -116,8 +116,8 @@ export default function ReminderModal({
             </View>
             <Text style={styles.toggleDesc}>
               {enabled
-                ? `سيتم إرسال إشعار يومياً في تمام الساعة ${previewTimeStr}`
-                : 'اضغط هنا لتفعيل الإشعار اليومي في الوقت المختار'}
+                ? `سيتم إرسال التنبيه يومياً الساعة ${previewTimeStr} وظهور كشف من لم يقرأ للإدارة لإشعارهم`
+                : 'اضغط هنا لتفعيل التنبيه اليومي وظهور كشف المتأخرين في الوقت المحدد'}
             </Text>
           </TouchableOpacity>
 

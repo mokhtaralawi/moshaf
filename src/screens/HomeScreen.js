@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   StatusBar,
   Platform,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
   loadReaders,
@@ -20,6 +21,7 @@ import {
   loadDailyStatuses,
   updateReaderDailyStatus,
   getDateKey,
+  loadCurrentUser,
 } from '../services/storageService';
 import { advanceReadersToNextDay, getFormattedArabicDate, getFormattedHijriDate, formatArabicTime } from '../utils/wirdCalculator';
 import { scheduleDailyWirdReminder, cancelAllReminders } from '../services/notificationService';
@@ -31,10 +33,13 @@ import ReportModal from '../components/ReportModal';
 import ReminderModal from '../components/ReminderModal';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import AdminSettingsModal from '../components/AdminSettingsModal';
+import AdminProfileModal from '../components/AdminProfileModal';
+import UnreadReminderModal from '../components/UnreadReminderModal';
 import SyncStatusBadge from '../components/SyncStatusBadge';
 import { subscribeSyncStatus } from '../services/syncService';
 
-export default function HomeScreen({ onLogout }) {
+export default function HomeScreen({ currentUser: initialUser, onLogout, onUserUpdated }) {
+  const [currentUser, setCurrentUser] = useState(initialUser);
   const [readers, setReaders] = useState([]);
   const [juzCount, setJuzCount] = useState(1);
   const [reminderEnabled, setReminderEnabled] = useState(false);
@@ -47,16 +52,86 @@ export default function HomeScreen({ onLogout }) {
   const [isReminderModalVisible, setIsReminderModalVisible] = useState(false);
   const [isChangePasswordVisible, setIsChangePasswordVisible] = useState(false);
   const [isAdminSettingsVisible, setIsAdminSettingsVisible] = useState(false);
+  const [isAdminProfileVisible, setIsAdminProfileVisible] = useState(false);
+  const [isUnreadReminderVisible, setIsUnreadReminderVisible] = useState(false);
   const [editingReader, setEditingReader] = useState(null);
 
   // حالات قراءة الورد اليومية
   const [dailyStatuses, setDailyStatuses] = useState({});
 
+  // مرجع لتفادي إغلاق الـ closure في التايمر الدوري
+  const stateRef = useRef({
+    readers: [],
+    dailyStatuses: {},
+    settings: { reminderEnabled: false, reminderHour: 20, reminderMinute: 0 },
+  });
+  stateRef.current = {
+    readers,
+    dailyStatuses,
+    settings: { reminderEnabled, reminderHour, reminderMinute },
+  };
+
   // تاريخ اليوم المنسق باللغة العربية (ميلادي وهجري)
   const todayArabicDate = getFormattedArabicDate(0);
   const todayHijriDate = getFormattedHijriDate(0);
 
-  // تحميل البيانات المحفوظة عند فتح التطبيق ومتابعة التحديثات اللحظية من السحابة
+  // فحص وإظهار تذكير المتأخرين تلقائياً عند حلول الوقت المضبوط من الإعدادات
+  const checkScheduledReminder = useCallback(async (settingsObj, currentReaders, currentStatuses) => {
+    try {
+      if (!settingsObj || !settingsObj.reminderEnabled) return;
+
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+
+      const targetHour = settingsObj.reminderHour !== undefined ? Number(settingsObj.reminderHour) : 20;
+      const targetMinute = settingsObj.reminderMinute !== undefined ? Number(settingsObj.reminderMinute) : 0;
+
+      const nowMinutes = currentHour * 60 + currentMinute;
+      const targetMinutes = targetHour * 60 + targetMinute;
+
+      // إذا وصلنا إلى أو تجاوزنا وقت التذكير لليوم
+      if (nowMinutes >= targetMinutes) {
+        const todayKey = getDateKey(0);
+        const lastPrompted = await AsyncStorage.getItem(`@quran_wird_admin_prompted_${todayKey}`);
+        if (!lastPrompted) {
+          const unreadList = (currentReaders || []).filter(
+            (r) => (currentStatuses[r.id]?.status || 'pending') === 'pending'
+          );
+
+          if (unreadList.length > 0) {
+            await AsyncStorage.setItem(
+              `@quran_wird_admin_prompted_${todayKey}`,
+              new Date().toISOString()
+            );
+            setIsUnreadReminderVisible(true);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Scheduled reminder check error:', e);
+    }
+  }, []);
+
+  const initApp = useCallback(async () => {
+    const storedReaders = await loadReaders();
+    const storedSettings = await loadSettings();
+    const todayStatuses = await loadDailyStatuses(getDateKey(0));
+    const user = await loadCurrentUser();
+    if (user) setCurrentUser(user);
+
+    setReaders(storedReaders);
+    setDailyStatuses(todayStatuses || {});
+    setJuzCount(storedSettings.juzCount || 1);
+    setReminderEnabled(storedSettings.reminderEnabled || false);
+    setReminderHour(storedSettings.reminderHour !== undefined ? storedSettings.reminderHour : 20);
+    setReminderMinute(storedSettings.reminderMinute !== undefined ? storedSettings.reminderMinute : 0);
+
+    // فحص موعد التذكير فور تحميل البيانات
+    checkScheduledReminder(storedSettings, storedReaders, todayStatuses || {});
+  }, [checkScheduledReminder]);
+
+  // تحميل البيانات ومتابعة التحديثات اللحظية من السحابة وفحص مؤقت التذكير الدوري
   useEffect(() => {
     initApp();
     const unsubscribe = subscribeSyncStatus((status) => {
@@ -64,20 +139,18 @@ export default function HomeScreen({ onLogout }) {
         initApp();
       }
     });
-    return () => unsubscribe();
-  }, []);
 
-  const initApp = async () => {
-    const storedReaders = await loadReaders();
-    const storedSettings = await loadSettings();
-    const todayStatuses = await loadDailyStatuses(getDateKey(0));
-    setReaders(storedReaders);
-    setDailyStatuses(todayStatuses || {});
-    setJuzCount(storedSettings.juzCount || 1);
-    setReminderEnabled(storedSettings.reminderEnabled || false);
-    setReminderHour(storedSettings.reminderHour !== undefined ? storedSettings.reminderHour : 20);
-    setReminderMinute(storedSettings.reminderMinute !== undefined ? storedSettings.reminderMinute : 0);
-  };
+    // مؤقت فحص موعد التذكير كل 25 ثانية أثناء فتح التطبيق
+    const timer = setInterval(() => {
+      const { readers: r, dailyStatuses: ds, settings: s } = stateRef.current;
+      checkScheduledReminder(s, r, ds);
+    }, 25000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(timer);
+    };
+  }, [initApp, checkScheduledReminder]);
 
   // تغيير مقدار الورد اليومي (جزء، جزأين، 3)
   const handleWirdCountChange = async (count) => {
@@ -237,13 +310,27 @@ export default function HomeScreen({ onLogout }) {
               {/* شريط الإدارة العلوي (صلاحيات المدير + الإعدادات + كلمة المرور + خروج) */}
               <View style={styles.adminBar}>
                 <View style={styles.adminBadgeRow}>
-                  <View style={styles.adminBadge}>
-                    <Text style={styles.adminBadgeText}>👑 لوحة المدير</Text>
-                  </View>
+                  <TouchableOpacity
+                    style={styles.adminBadge}
+                    onPress={() => setIsAdminProfileVisible(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.adminBadgeText}>
+                      👑 {currentUser?.name || 'المدير'} (@{currentUser?.username || 'admin'})
+                    </Text>
+                  </TouchableOpacity>
                   <SyncStatusBadge compact />
                 </View>
 
                 <View style={styles.adminActions}>
+                  <TouchableOpacity
+                    style={[styles.adminActionBtn, styles.profileBtn]}
+                    onPress={() => setIsAdminProfileVisible(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.profileBtnText}>👤 حسابي</Text>
+                  </TouchableOpacity>
+
                   <TouchableOpacity
                     style={[styles.adminActionBtn, styles.settingsBtn]}
                     onPress={() => setIsAdminSettingsVisible(true)}
@@ -291,16 +378,30 @@ export default function HomeScreen({ onLogout }) {
                   </View>
                 </View>
 
-                {/* زر التنبيه الدائري/الكبسولي لفتح نافذة ضبط الوقت */}
-                <TouchableOpacity
-                  style={[styles.reminderPill, reminderEnabled && styles.reminderPillActive]}
-                  onPress={() => setIsReminderModalVisible(true)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.reminderText, reminderEnabled && styles.reminderTextActive]}>
-                    {reminderEnabled ? `🔔 ${formatArabicTime(reminderHour, reminderMinute)}` : '⏰ ضبط التنبيه'}
-                  </Text>
-                </TouchableOpacity>
+                {/* أزرار التنبيهات: زر من لم يقرأ + زر ضبط التنبيه */}
+                <View style={styles.headerTopActions}>
+                  {pendingCount > 0 && (
+                    <TouchableOpacity
+                      style={styles.unreadReminderPill}
+                      onPress={() => setIsUnreadReminderVisible(true)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.unreadReminderPillText}>
+                        📢 تذكير ({pendingCount})
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  <TouchableOpacity
+                    style={[styles.reminderPill, reminderEnabled && styles.reminderPillActive]}
+                    onPress={() => setIsReminderModalVisible(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.reminderText, reminderEnabled && styles.reminderTextActive]}>
+                      {reminderEnabled ? `🔔 ${formatArabicTime(reminderHour, reminderMinute)}` : '⏰ ضبط التنبيه'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {/* بطاقة الإحصائيات والإنجاز اليومي المدمجة */}
@@ -332,9 +433,15 @@ export default function HomeScreen({ onLogout }) {
                 <View style={styles.statusPillReadBox}>
                   <Text style={styles.statusPillReadText}>✅ أتموا: {readCount}</Text>
                 </View>
-                <View style={styles.statusPillPendingBox}>
-                  <Text style={styles.statusPillPendingText}>⏳ قيد القراءة: {pendingCount}</Text>
-                </View>
+                <TouchableOpacity
+                  style={[styles.statusPillPendingBox, pendingCount > 0 && styles.statusPillPendingBoxActive]}
+                  onPress={() => setIsUnreadReminderVisible(true)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.statusPillPendingText}>
+                    ⏳ قيد القراءة: {pendingCount} {pendingCount > 0 ? '📢' : ''}
+                  </Text>
+                </TouchableOpacity>
                 <View style={styles.statusPillExcusedBox}>
                   <Text style={styles.statusPillExcusedText}>✋ معتذر: {excusedCount}</Text>
                 </View>
@@ -464,6 +571,31 @@ export default function HomeScreen({ onLogout }) {
         onUpdateJuzCount={handleWirdCountChange}
         readers={readers}
         onUpdateReaders={setReaders}
+        dailyStatuses={dailyStatuses}
+        reminderHour={reminderHour}
+        reminderMinute={reminderMinute}
+        reminderEnabled={reminderEnabled}
+        onOpenReminderSettings={() => setIsReminderModalVisible(true)}
+        onOpenUnreadReminder={() => setIsUnreadReminderVisible(true)}
+      />
+
+      <AdminProfileModal
+        visible={isAdminProfileVisible}
+        onClose={() => setIsAdminProfileVisible(false)}
+        admin={currentUser || { id: 'admin_root', username: 'admin', name: 'المدير العام' }}
+        onProfileUpdated={(updatedAdmin) => {
+          setCurrentUser(updatedAdmin);
+          if (onUserUpdated) onUserUpdated(updatedAdmin);
+        }}
+      />
+
+      <UnreadReminderModal
+        visible={isUnreadReminderVisible}
+        onClose={() => setIsUnreadReminderVisible(false)}
+        readers={readers}
+        dailyStatuses={dailyStatuses}
+        reminderTimeStr={formatArabicTime(reminderHour, reminderMinute)}
+        onOpenTimeSettings={() => setIsReminderModalVisible(true)}
       />
     </SafeAreaView>
   );
@@ -537,6 +669,15 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '600',
   },
+  profileBtn: {
+    backgroundColor: 'rgba(5, 150, 105, 0.35)',
+    borderColor: '#34D399',
+  },
+  profileBtnText: {
+    color: '#D1FAE5',
+    fontSize: 10.5,
+    fontWeight: 'bold',
+  },
   settingsBtn: {
     backgroundColor: 'rgba(245, 158, 11, 0.28)',
     borderColor: '#F59E0B',
@@ -599,6 +740,29 @@ const styles = StyleSheet.create({
     color: '#D1FAE5',
     marginTop: 2,
     fontWeight: '600',
+  },
+  headerTopActions: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
+  },
+  unreadReminderPill: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1.5,
+    borderColor: '#F59E0B',
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 20,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  unreadReminderPillText: {
+    fontSize: 11.5,
+    color: '#92400E',
+    fontWeight: '900',
   },
   reminderPill: {
     backgroundColor: 'rgba(255, 255, 255, 0.14)',
@@ -692,6 +856,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FBBF24',
     alignItems: 'center',
+  },
+  statusPillPendingBoxActive: {
+    backgroundColor: 'rgba(217, 119, 6, 0.38)',
+    borderColor: '#F59E0B',
+    borderWidth: 1.5,
   },
   statusPillPendingText: {
     color: '#FEF3C7',

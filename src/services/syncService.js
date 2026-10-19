@@ -157,6 +157,38 @@ export const applyActionsReducer = (currentState, actions = []) => {
         }
         break;
       }
+      case 'CREATE_ADMIN': {
+        if (payload.id && payload.username) {
+          const exists = state.admins.some((a) => a.id === payload.id || a.username === payload.username);
+          if (!exists) {
+            state.admins.push({
+              id: payload.id,
+              username: payload.username,
+              name: payload.name || 'مدير مساعد',
+              password: payload.password || '123',
+              role: 'admin',
+              isFirstLogin: false,
+            });
+          }
+        }
+        break;
+      }
+      case 'DELETE_ADMIN': {
+        if (payload.adminId) {
+          state.admins = state.admins.filter((a) => String(a.id) !== String(payload.adminId));
+        }
+        break;
+      }
+      case 'UPDATE_ADMIN_PROFILE': {
+        const { adminId, name, username, newPassword } = payload;
+        const admin = state.admins.find((a) => String(a.id) === String(adminId) || a.username === adminId);
+        if (admin) {
+          if (name) admin.name = name;
+          if (username) admin.username = username;
+          if (newPassword) admin.password = newPassword;
+        }
+        break;
+      }
       default:
         break;
     }

@@ -245,16 +245,36 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* شريط الإعلانات الصادرة من الإدارة */}
-        {announcements.length > 0 && (
-          <View style={styles.announcementBanner}>
-            <View style={styles.announcementHeader}>
-              <Text style={styles.announcementTag}>📢 تنبيه من الإدارة</Text>
-              <Text style={styles.announcementTitle}>{announcements[0].title}</Text>
+        {/* شريط الإعلانات والتنبيهات الصادرة من الإدارة */}
+        {announcements
+          .filter((ann) => {
+            if (!ann.targetUserIds || !Array.isArray(ann.targetUserIds)) return true;
+            const myId = String(currentUser?.readerId || currentUser?.id || '');
+            return ann.targetUserIds.map(String).includes(myId);
+          })
+          .slice(0, 2)
+          .map((ann) => (
+            <View
+              key={ann.id}
+              style={[
+                styles.announcementBanner,
+                ann.isReminder && styles.announcementReminderBanner,
+              ]}
+            >
+              <View style={styles.announcementHeader}>
+                <Text
+                  style={[
+                    styles.announcementTag,
+                    ann.isReminder && styles.announcementReminderTag,
+                  ]}
+                >
+                  {ann.isReminder ? '⏰ تذكير خاص بالورد' : '📢 تنبيه من الإدارة'}
+                </Text>
+                <Text style={styles.announcementTitle}>{ann.title}</Text>
+              </View>
+              <Text style={styles.announcementMessage}>{ann.message}</Text>
             </View>
-            <Text style={styles.announcementMessage}>{announcements[0].message}</Text>
-          </View>
-        )}
+          ))}
 
         {/* بطاقة الاستبيان التفاعلي من الإدارة (نعم / لا) */}
         {activeSurvey && (
@@ -1069,6 +1089,16 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 14,
   },
+  announcementReminderBanner: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#D97706',
+    borderWidth: 2,
+    shadowColor: '#D97706',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
   announcementHeader: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
@@ -1083,6 +1113,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
+  },
+  announcementReminderTag: {
+    backgroundColor: '#B45309',
   },
   announcementTitle: {
     fontSize: 13,

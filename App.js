@@ -56,7 +56,13 @@ export default function App() {
 
   // 4. إذا كان المستخدم مديراً
   if (currentUser.role === 'admin') {
-    return <HomeScreen onLogout={handleLogout} />;
+    return (
+      <HomeScreen
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        onUserUpdated={(updatedUser) => setCurrentUser(updatedUser)}
+      />
+    );
   }
 
   // 5. إذا كان مستخدماً عادياً (قارئاً في المجموعة)

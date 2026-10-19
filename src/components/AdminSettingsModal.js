@@ -17,7 +17,6 @@ import {
   loadActiveSurvey,
   createSurvey,
   closeSurvey,
-  saveSettings,
   saveReaders,
   addAnnouncement,
   loadTasks,
@@ -26,6 +25,7 @@ import {
   loadAdminAccounts,
   createAdminAccount,
   deleteAdminAccount,
+  updateAdminProfile,
   deleteReader,
   loadMotivationalMessage,
   saveMotivationalMessage,
@@ -36,6 +36,7 @@ import { exportSurveyToPdf, printSurveyDirectly } from '../services/pdfService.j
 import { getServerUrl, setServerUrl, testServerConnection, testSupabaseConnection } from '../config/apiConfig.js';
 import { syncWithCloud, getSyncState } from '../services/syncService.js';
 import { checkAndApplyAppUpdate, getUpdateInfo } from '../services/otaUpdateService.js';
+import { formatArabicTime } from '../utils/wirdCalculator.js';
 
 export default function AdminSettingsModal({
   visible,
@@ -44,6 +45,12 @@ export default function AdminSettingsModal({
   onUpdateJuzCount,
   readers = [],
   onUpdateReaders,
+  dailyStatuses = {},
+  reminderHour = 20,
+  reminderMinute = 0,
+  reminderEnabled = false,
+  onOpenReminderSettings,
+  onOpenUnreadReminder,
 }) {
   const [activeTab, setActiveTab] = useState('wird'); // 'wird' | 'tasks' | 'accounts' | 'notifications' | 'survey'
 
@@ -71,6 +78,12 @@ export default function AdminSettingsModal({
   const [newAdminUser, setNewAdminUser] = useState('');
   const [newAdminPass, setNewAdminPass] = useState('');
   const [newAdminName, setNewAdminName] = useState('');
+
+  // تعديل بيانات حساب المدير (الاسم، اسم المستخدم، كلمة المرور)
+  const [editingAdmin, setEditingAdmin] = useState(null);
+  const [editAdminName, setEditAdminName] = useState('');
+  const [editAdminUsername, setEditAdminUsername] = useState('');
+  const [editAdminPassword, setEditAdminPassword] = useState('');
 
   // إرسال الإشعارات
   const [notifTitle, setNotifTitle] = useState('📖 تذكير بالورد القرآني');
@@ -291,6 +304,41 @@ export default function AdminSettingsModal({
     }
     setEditingMember(null);
     Alert.alert('تم الحفظ بنجاح ✅', 'تم تحديث اسم المستخدم وبيانات الحساب بنجاح.');
+  };
+
+  // فتح نافذة تعديل بيانات حساب المدير
+  const handleOpenEditAdmin = (admin) => {
+    setEditingAdmin(admin);
+    setEditAdminName(admin.name || '');
+    setEditAdminUsername(admin.username || '');
+    setEditAdminPassword(admin.password || '');
+  };
+
+  // حفظ التعديلات على حساب المدير (الاسم واسم المستخدم وكلمة المرور)
+  const handleSaveEditAdmin = async () => {
+    if (!editingAdmin) return;
+    if (!editAdminName.trim()) {
+      Alert.alert('تنبيه', 'يرجى إدخال اسم المدير.');
+      return;
+    }
+    if (!editAdminUsername.trim()) {
+      Alert.alert('تنبيه', 'يرجى إدخال اسم المستخدم (معرف الدخول).');
+      return;
+    }
+
+    const res = await updateAdminProfile(editingAdmin.id, {
+      name: editAdminName.trim(),
+      username: editAdminUsername.trim(),
+      newPassword: editAdminPassword.trim() || undefined,
+    });
+
+    if (res.success) {
+      await fetchAdmins();
+      setEditingAdmin(null);
+      Alert.alert('تم الحفظ بنجاح ✅', 'تم تحديث اسم المدير واسم المستخدم بنجاح.');
+    } else {
+      Alert.alert('خطأ', res.error || 'تعذر تحديث بيانات المدير.');
+    }
   };
 
   // حذف حساب مدير مساعد (يدعم الويب والموبايل)
@@ -1000,6 +1048,13 @@ export default function AdminSettingsModal({
                   {adminsList.map((a) => (
                     <View key={a.id} style={styles.accountRow}>
                       <View style={styles.accountLeftActions}>
+                        <TouchableOpacity
+                          style={[styles.deleteTaskBtn, { backgroundColor: '#F0FDF4', borderColor: '#86EFAC' }]}
+                          onPress={() => handleOpenEditAdmin(a)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.deleteTaskBtnText, { color: '#166534' }]}>تعديل ✏️</Text>
+                        </TouchableOpacity>
                         {a.id !== 'admin_root' ? (
                           <TouchableOpacity
                             style={styles.deleteTaskBtn}
@@ -1066,6 +1121,62 @@ export default function AdminSettingsModal({
             {/* 2. تبويب إرسال الإشعارات */}
             {activeTab === 'notifications' && (
               <View style={styles.tabContent}>
+                {/* قسم تذكير المتأخرين عن قراءة الورد اليومي */}
+                <View style={styles.sectionCard}>
+                  <Text style={styles.sectionTitle}>⏰ التذكير التلقائي بالمتأخرين عن الورد:</Text>
+                  <Text style={styles.sectionDesc}>
+                    يمكنك ضبط وقت التنبيه اليومي، أو فتح قائمة القراء الذين لم يقرأوا بعد وتحديدهم لإرسال تنبيه مباشر لهم فوراً.
+                  </Text>
+
+                  <View style={styles.unreadReminderBanner}>
+                    <View style={styles.unreadReminderNumBox}>
+                      <Text style={styles.unreadReminderNum}>
+                        {readers.filter((r) => (dailyStatuses[r.id]?.status || 'pending') === 'pending').length}
+                      </Text>
+                      <Text style={styles.unreadReminderNumLabel}>لم يقرأوا بعد</Text>
+                    </View>
+
+                    <View style={styles.unreadReminderInfo}>
+                      <Text style={styles.unreadReminderTimeText}>
+                        🔔 وقت التنبيه المضبوط: {formatArabicTime(reminderHour, reminderMinute)}
+                      </Text>
+                      <Text style={styles.unreadReminderStatusText}>
+                        {reminderEnabled ? '🟢 التنبيه التلقائي مفعل' : '⚪ التنبيه التلقائي موقوف'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.unreadButtonsRow}>
+                    {onOpenUnreadReminder && (
+                      <TouchableOpacity
+                        style={[styles.primaryActionBtn, { flex: 1.2, backgroundColor: '#059669', marginTop: 0 }]}
+                        onPress={() => {
+                          onClose();
+                          onOpenUnreadReminder();
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.primaryActionBtnText}>
+                          📢 تذكير المتأخرين وتحديدهم
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {onOpenReminderSettings && (
+                      <TouchableOpacity
+                        style={[styles.primaryActionBtn, { flex: 1, backgroundColor: '#D97706', marginTop: 0 }]}
+                        onPress={() => {
+                          onClose();
+                          onOpenReminderSettings();
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.primaryActionBtnText}>⏰ ضبط الوقت</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+
                 <View style={styles.sectionCard}>
                   <Text style={styles.sectionTitle}>📢 إرسال وبث إشعار فوري لجميع الأعضاء:</Text>
                   <Text style={styles.sectionDesc}>
@@ -1515,6 +1626,80 @@ export default function AdminSettingsModal({
                 <TouchableOpacity
                   style={[styles.primaryActionBtn, { flex: 1, backgroundColor: '#64748B' }]}
                   onPress={() => setEditingMember(null)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.primaryActionBtnText}>إلغاء</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        {/* مودال تعديل بيانات حساب المدير (الاسم، اسم المستخدم، كلمة المرور) */}
+        <Modal visible={!!editingAdmin} transparent animationType="fade" onRequestClose={() => setEditingAdmin(null)}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.editMemberOverlay}
+          >
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+              <View style={StyleSheet.absoluteFillObject} />
+            </TouchableWithoutFeedback>
+            <View style={styles.editMemberCard}>
+              <View style={styles.editMemberHeader}>
+                <Text style={styles.editMemberTitle}>👑 تعديل بيانات حساب المدير</Text>
+                <Text style={styles.editMemberSubtitle}>يمكنك تعديل الاسم، اسم المستخدم، أو تعيين كلمة مرور جديدة</Text>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>اسم المدير الكامل:</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editAdminName}
+                  onChangeText={setEditAdminName}
+                  placeholder="الاسم الكامل للمدير"
+                  placeholderTextColor="#94A3B8"
+                  textAlign="right"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>اسم المستخدم (معرف الدخول):</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editAdminUsername}
+                  onChangeText={setEditAdminUsername}
+                  placeholder="مثال: admin"
+                  placeholderTextColor="#94A3B8"
+                  autoCapitalize="none"
+                  textAlign="right"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>كلمة المرور الجديدة (اختياري):</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editAdminPassword}
+                  onChangeText={setEditAdminPassword}
+                  placeholder="اتركها كما هي أو أدخل كلمة جديدة"
+                  placeholderTextColor="#94A3B8"
+                  secureTextEntry
+                  textAlign="right"
+                />
+              </View>
+
+              <View style={styles.editMemberBtnRow}>
+                <TouchableOpacity
+                  style={[styles.primaryActionBtn, { flex: 1, backgroundColor: '#059669' }]}
+                  onPress={handleSaveEditAdmin}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.primaryActionBtnText}>حفظ التعديلات ✅</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.primaryActionBtn, { flex: 1, backgroundColor: '#64748B' }]}
+                  onPress={() => setEditingAdmin(null)}
                   activeOpacity={0.8}
                 >
                   <Text style={styles.primaryActionBtnText}>إلغاء</Text>
@@ -2408,5 +2593,52 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     gap: 10,
     marginTop: 14,
+  },
+  unreadReminderBanner: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1.5,
+    borderColor: '#F59E0B',
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 12,
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  unreadReminderNumBox: {
+    backgroundColor: '#B45309',
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+  },
+  unreadReminderNum: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  unreadReminderNumLabel: {
+    color: '#FEF3C7',
+    fontSize: 9.5,
+    fontWeight: 'bold',
+  },
+  unreadReminderInfo: {
+    alignItems: 'flex-end',
+    flex: 1,
+    marginRight: 10,
+  },
+  unreadReminderTimeText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#92400E',
+  },
+  unreadReminderStatusText: {
+    fontSize: 11,
+    color: '#78350F',
+    marginTop: 2,
+  },
+  unreadButtonsRow: {
+    flexDirection: 'row-reverse',
+    gap: 10,
   },
 });

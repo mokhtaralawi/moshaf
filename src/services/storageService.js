@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DEFAULT_READERS } from '../constants/quranData';
 import { enqueueSyncAction, initSyncEngine } from './syncService';
+import { sendInstantNotification } from './notificationService';
 
 // تهيئة محرك المزامنة التلقائية عند إقلاع التطبيق
 initSyncEngine().catch((e) => console.log('Sync engine init:', e));
@@ -402,6 +403,94 @@ export const deleteAdminAccount = async (adminId) => {
   } catch (error) {
     console.error('خطأ أثناء حذف حساب المدير:', error);
     return { success: false, error: 'تعذر حذف حساب المدير.' };
+  }
+};
+
+/**
+ * 2.8 تعديل بيانات حساب المدير (الاسم، اسم المستخدم، كلمة المرور)
+ */
+export const updateAdminProfile = async (adminId, { name, username, newPassword }) => {
+  try {
+    const admins = await loadAdminAccounts();
+    const cleanUsername = username ? username.trim() : null;
+    const cleanName = name ? name.trim() : null;
+    const cleanPass = newPassword ? newPassword.trim() : null;
+
+    if (cleanUsername) {
+      const conflict = admins.find(
+        (a) =>
+          String(a.id) !== String(adminId) &&
+          (a.username || '').toLowerCase() === cleanUsername.toLowerCase()
+      );
+      if (conflict) {
+        return { success: false, error: 'اسم المستخدم مسجل مسبقاً لمدير آخر.' };
+      }
+    }
+
+    let updatedAdmin = null;
+    const updatedAdmins = admins.map((a) => {
+      if (String(a.id) === String(adminId) || a.username === adminId) {
+        updatedAdmin = {
+          ...a,
+          name: cleanName || a.name || 'مدير النظام',
+          username: cleanUsername || a.username,
+          password: cleanPass || a.password,
+        };
+        return updatedAdmin;
+      }
+      return a;
+    });
+
+    if (!updatedAdmin) {
+      return { success: false, error: 'لم يتم العثور على حساب المدير.' };
+    }
+
+    await AsyncStorage.setItem(STORAGE_KEYS.ADMINS_LIST, JSON.stringify(updatedAdmins));
+
+    // إذا كان هذا هو حساب المدير الرئيسي admin_root أو المطابق لـ ADMIN_CREDS
+    const creds = await loadAdminCredentials();
+    if (String(updatedAdmin.id) === 'admin_root' || creds.username === adminId || creds.id === adminId) {
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.ADMIN_CREDS,
+        JSON.stringify({
+          ...creds,
+          id: updatedAdmin.id,
+          username: updatedAdmin.username,
+          password: updatedAdmin.password,
+          name: updatedAdmin.name,
+        })
+      );
+    }
+
+    // تحديث الجلسة الحالية إذا كان هذا الحساب مسجل دخوله حالياً
+    const currentUser = await loadCurrentUser();
+    if (
+      currentUser &&
+      (currentUser.id === adminId ||
+        currentUser.id === updatedAdmin.id ||
+        currentUser.username === adminId ||
+        currentUser.role === 'admin')
+    ) {
+      const updatedSession = {
+        ...currentUser,
+        id: updatedAdmin.id,
+        name: updatedAdmin.name,
+        username: updatedAdmin.username,
+      };
+      await saveCurrentUser(updatedSession);
+    }
+
+    await enqueueSyncAction('UPDATE_ADMIN_PROFILE', {
+      adminId: updatedAdmin.id,
+      name: updatedAdmin.name,
+      username: updatedAdmin.username,
+      newPassword: cleanPass || undefined,
+    });
+
+    return { success: true, admin: updatedAdmin };
+  } catch (e) {
+    console.error('خطأ أثناء تحديث بيانات حساب المدير:', e);
+    return { success: false, error: 'حدث خطأ أثناء حفظ بيانات المدير.' };
   }
 };
 
@@ -886,6 +975,61 @@ export const saveMotivationalMessage = async (msg) => {
     return cleanMsg;
   } catch (error) {
     console.error('خطأ أثناء حفظ رسالة التحفيز:', error);
+    return false;
+  }
+};
+
+/**
+ * 28. إرسال إشعار وتنبيه للأعضاء الذين لم يقرأوا الورد بعد
+ * @param {Array<string>} selectedReaderIds - مصفوفة معرفات القراء المحددين
+ * @param {string} title - عنوان الإشعار
+ * @param {string} message - نص التذكير
+ */
+export const sendUnreadReminderNotification = async (selectedReaderIds = [], title, message) => {
+  try {
+    const defaultTitle = '📖 تذكير بوردك القرآني اليومي';
+    const defaultMsg = 'تقبل الله طاعاتكم، نذكركم بفضل إتمام وردكم القرآني لليوم المبارك، والمشاركة في إنجاز ختمة المجموعة ✨';
+    const finalTitle = (title || defaultTitle).trim();
+    const finalMsg = (message || defaultMsg).trim();
+
+    // 1. إضافة إعلان موجه (Targeted Announcement) للأعضاء المحددين
+    const ann = {
+      id: `ann_reminder_${Date.now()}`,
+      title: finalTitle,
+      message: finalMsg,
+      targetUserIds: selectedReaderIds,
+      isReminder: true,
+      timestamp: new Date().toISOString(),
+    };
+
+    const currentAnns = await loadAnnouncements();
+    const updatedAnns = [ann, ...currentAnns].slice(0, 15);
+    await AsyncStorage.setItem(STORAGE_KEYS.ANNOUNCEMENTS, JSON.stringify(updatedAnns));
+    await enqueueSyncAction('ADD_ANNOUNCEMENT', { announcement: ann });
+
+    // 2. إطلاق إشعار الجهاز الفوري
+    await sendInstantNotification(finalTitle, finalMsg);
+
+    // 3. حفظ تاريخ وتوقيت آخر تذكير تم إرساله لليوم
+    const todayKey = getDateKey(0);
+    await AsyncStorage.setItem(`@quran_wird_reminder_sent_${todayKey}`, new Date().toISOString());
+
+    return { success: true, count: selectedReaderIds.length };
+  } catch (e) {
+    console.error('خطأ أثناء إرسال تذكير المتأخرين:', e);
+    return { success: false, error: 'تعذر إرسال التذكير' };
+  }
+};
+
+/**
+ * 29. فحص ما إذا كان تم إرسال تذكير المتأخرين لليوم أم لا
+ */
+export const isUnreadReminderSentToday = async () => {
+  try {
+    const todayKey = getDateKey(0);
+    const val = await AsyncStorage.getItem(`@quran_wird_reminder_sent_${todayKey}`);
+    return Boolean(val);
+  } catch (_e) {
     return false;
   }
 };
