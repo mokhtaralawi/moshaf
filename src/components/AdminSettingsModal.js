@@ -83,6 +83,12 @@ export default function AdminSettingsModal({
   const [isCreatingSurvey, setIsCreatingSurvey] = useState(false);
   const [isExportingSurveyPdf, setIsExportingSurveyPdf] = useState(false);
 
+  // تعديل بيانات المستخدم/القارئ
+  const [editingMember, setEditingMember] = useState(null);
+  const [editMemberName, setEditMemberName] = useState('');
+  const [editMemberUsername, setEditMemberUsername] = useState('');
+  const [editMemberPassword, setEditMemberPassword] = useState('');
+
   // السحابة والتحديثات الهوائية
   const [serverUrlInput, setServerUrlInput] = useState('');
   const [isTestingServer, setIsTestingServer] = useState(false);
@@ -231,9 +237,40 @@ export default function AdminSettingsModal({
     } else {
       Alert.alert('تأكيد الحذف', confirmMessage, [
         { text: 'إلغاء', style: 'cancel' },
-        { text: 'حذف', style: 'destructive', onPress: execute },
-      ]);
+  // فتح نافذة تعديل بيانات العضو
+  const handleOpenEditMember = (member) => {
+    setEditingMember(member);
+    setEditMemberName(member.name || '');
+    setEditMemberUsername(member.username || '');
+    setEditMemberPassword(member.password || '');
+  };
+
+  // حفظ التعديلات على حساب العضو
+  const handleSaveEditMember = async () => {
+    if (!editingMember) return;
+    if (!editMemberName.trim()) {
+      Alert.alert('تنبيه', 'يرجى إدخال اسم القارئ.');
+      return;
     }
+
+    const updated = readers.map((r) => {
+      if (String(r.id) === String(editingMember.id)) {
+        return {
+          ...r,
+          name: editMemberName.trim(),
+          username: editMemberUsername.trim() || r.username || editMemberName.trim().replace(/\s+/g, '_'),
+          password: editMemberPassword.trim() || r.password || '123456',
+        };
+      }
+      return r;
+    });
+
+    await saveReaders(updated);
+    if (onUpdateReaders) {
+      onUpdateReaders(updated);
+    }
+    setEditingMember(null);
+    Alert.alert('تم الحفظ بنجاح ✅', 'تم تحديث اسم المستخدم وبيانات الحساب بنجاح.');
   };
 
   // حذف حساب مدير مساعد (يدعم الويب والموبايل)
@@ -967,6 +1004,13 @@ export default function AdminSettingsModal({
                     <View key={r.id || idx} style={styles.accountRow}>
                       <View style={styles.accountLeftActions}>
                         <TouchableOpacity
+                          style={[styles.deleteTaskBtn, { backgroundColor: '#F0FDF4', borderColor: '#86EFAC' }]}
+                          onPress={() => handleOpenEditMember(r)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.deleteTaskBtnText, { color: '#166534' }]}>تعديل ✏️</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
                           style={styles.deleteTaskBtn}
                           onPress={() => handleDeleteMember(r.id, r.name)}
                           activeOpacity={0.7}
@@ -975,7 +1019,7 @@ export default function AdminSettingsModal({
                         </TouchableOpacity>
                         <View style={[styles.defaultPassBadge, r.isFirstLogin === false && styles.customPassBadge]}>
                           <Text style={[styles.defaultPassBadgeText, r.isFirstLogin === false && styles.customPassBadgeText]}>
-                            {r.isFirstLogin === false ? '🔒 كلمة مرور مخصصة' : '🔑 كلمة مرور أولية'}
+                            {r.isFirstLogin === false ? '🔒 مخصص' : '🔑 123456'}
                           </Text>
                         </View>
                       </View>
@@ -1361,6 +1405,74 @@ export default function AdminSettingsModal({
             )}
           </ScrollView>
         </View>
+
+        {/* مودال تعديل بيانات حساب العضو (الاسم، اسم المستخدم، كلمة المرور) */}
+        <Modal visible={!!editingMember} transparent animationType="fade" onRequestClose={() => setEditingMember(null)}>
+          <View style={styles.editMemberOverlay}>
+            <View style={styles.editMemberCard}>
+              <View style={styles.editMemberHeader}>
+                <Text style={styles.editMemberTitle}>✏️ تعديل بيانات القارئ والحساب</Text>
+                <Text style={styles.editMemberSubtitle}>يمكنك تعديل الاسم، اسم المستخدم، أو تعيين كلمة مرور جديدة</Text>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>اسم القارئ:</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editMemberName}
+                  onChangeText={setEditMemberName}
+                  placeholder="الاسم الكامل"
+                  placeholderTextColor="#94A3B8"
+                  textAlign="right"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>اسم المستخدم (معرف الدخول):</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editMemberUsername}
+                  onChangeText={setEditMemberUsername}
+                  placeholder="مثال: user_1"
+                  placeholderTextColor="#94A3B8"
+                  autoCapitalize="none"
+                  textAlign="right"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>كلمة المرور الجديدة:</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editMemberPassword}
+                  onChangeText={setEditMemberPassword}
+                  placeholder="كلمة المرور"
+                  placeholderTextColor="#94A3B8"
+                  secureTextEntry
+                  textAlign="right"
+                />
+              </View>
+
+              <View style={styles.editMemberBtnRow}>
+                <TouchableOpacity
+                  style={[styles.primaryActionBtn, { flex: 1, backgroundColor: '#059669' }]}
+                  onPress={handleSaveEditMember}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.primaryActionBtnText}>حفظ التعديلات ✅</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.primaryActionBtn, { flex: 1, backgroundColor: '#64748B' }]}
+                  onPress={() => setEditingMember(null)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.primaryActionBtnText}>إلغاء</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -2157,5 +2269,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  editMemberOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(6, 78, 59, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  editMemberCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+  },
+  editMemberHeader: {
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  editMemberTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  editMemberSubtitle: {
+    fontSize: 11.5,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  editMemberBtnRow: {
+    flexDirection: 'row-reverse',
+    gap: 10,
+    marginTop: 14,
   },
 });

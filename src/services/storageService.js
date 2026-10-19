@@ -189,27 +189,47 @@ export const authenticateUser = async (identifier, password) => {
 };
 
 /**
- * 2.2 تحديث كلمة المرور للمستخدم
+ * 2.2 تحديث كلمة المرور للمستخدم (القارئ أو المدير)
  */
 export const updateUserPassword = async (userId, newPassword) => {
   try {
+    const cleanPass = newPassword.trim();
     const readers = await loadReaders();
+    let foundReader = false;
     const updatedReaders = readers.map((r) => {
-      if (r.id === userId) {
+      if (String(r.id) === String(userId)) {
+        foundReader = true;
         return {
           ...r,
-          password: newPassword.trim(),
+          password: cleanPass,
           isFirstLogin: false,
         };
       }
       return r;
     });
 
-    await saveReaders(updatedReaders);
+    if (foundReader) {
+      await saveReaders(updatedReaders);
+    } else {
+      // قد يكون مدير نظام
+      const admins = await loadAdminAccounts();
+      const updatedAdmins = admins.map((a) => {
+        if (String(a.id) === String(userId) || a.username === userId) {
+          return { ...a, password: cleanPass };
+        }
+        return a;
+      });
+      await AsyncStorage.setItem(STORAGE_KEYS.ADMINS_LIST, JSON.stringify(updatedAdmins));
+      // حفظ بيانات اعتماد المدير الرئيسي
+      const defaultCreds = await loadAdminCredentials();
+      if (defaultCreds.username === userId || defaultCreds.id === userId) {
+        await saveAdminCredentials(defaultCreds.username, cleanPass);
+      }
+    }
 
     // تحديث الجلسة إذا كان هو المستخدم الحالي
     const currentUser = await loadCurrentUser();
-    if (currentUser && (currentUser.id === userId || currentUser.readerId === userId)) {
+    if (currentUser && (currentUser.id === userId || currentUser.readerId === userId || currentUser.username === userId)) {
       await saveCurrentUser({
         ...currentUser,
         isFirstLogin: false,
@@ -221,6 +241,54 @@ export const updateUserPassword = async (userId, newPassword) => {
   } catch (e) {
     console.error('خطأ أثناء تحديث كلمة المرور:', e);
     return false;
+  }
+};
+
+/**
+ * 2.2.1 تحديث بيانات الملف الشخصي للمستخدم العادي (الاسم، اسم الدخول، كلمة المرور)
+ */
+export const updateUserProfile = async (userId, { name, username, newPassword }) => {
+  try {
+    const readers = await loadReaders();
+    let updatedReader = null;
+    const updatedReaders = readers.map((r) => {
+      if (String(r.id) === String(userId)) {
+        updatedReader = {
+          ...r,
+          name: name ? name.trim() : r.name,
+          username: username ? username.trim() : r.username,
+          password: newPassword ? newPassword.trim() : r.password,
+          isFirstLogin: false,
+        };
+        return updatedReader;
+      }
+      return r;
+    });
+
+    if (!updatedReader) {
+      return { success: false, error: 'لم يتم العثور على المستخدم.' };
+    }
+
+    await saveReaders(updatedReaders);
+
+    // تحديث الجلسة المحفوظة للمستخدم
+    const currentUser = await loadCurrentUser();
+    if (currentUser && (currentUser.id === userId || currentUser.readerId === userId)) {
+      const newSession = {
+        ...currentUser,
+        name: updatedReader.name,
+        readerName: updatedReader.name,
+        username: updatedReader.username,
+        isFirstLogin: false,
+      };
+      await saveCurrentUser(newSession);
+    }
+
+    await enqueueSyncAction('UPDATE_PROFILE', { userId });
+    return { success: true, user: updatedReader };
+  } catch (e) {
+    console.error('خطأ أثناء تحديث بيانات المستخدم:', e);
+    return { success: false, error: 'حدث خطأ أثناء تحديث البيانات.' };
   }
 };
 

@@ -12,15 +12,21 @@ import { getReaderWirdDetails } from '../utils/wirdCalculator';
 
 export default function AddReaderModal({ visible, onClose, onSave, editingReader }) {
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [currentJuz, setCurrentJuz] = useState('1');
 
   // تعبئة الحقول إذا كان المودال في وضع التعديل (Edit Mode)
   useEffect(() => {
     if (editingReader) {
-      setName(editingReader.name);
-      setCurrentJuz(String(editingReader.currentJuz));
+      setName(editingReader.name || '');
+      setUsername(editingReader.username || '');
+      setPassword(editingReader.password || '');
+      setCurrentJuz(String(editingReader.currentJuz || 1));
     } else {
       setName('');
+      setUsername('');
+      setPassword('123456');
       setCurrentJuz('1');
     }
   }, [editingReader, visible]);
@@ -51,9 +57,13 @@ export default function AddReaderModal({ visible, onClose, onSave, editingReader
     }
 
     onSave({
+      ...(editingReader || {}),
       id: editingReader ? editingReader.id : Date.now().toString(),
       name: name.trim(),
+      username: username.trim() || editingReader?.username || name.trim().replace(/\s+/g, '_'),
+      password: password.trim() || editingReader?.password || '123456',
       currentJuz: parsedJuz,
+      isFirstLogin: editingReader ? editingReader.isFirstLogin : true,
     });
 
     onClose();
@@ -85,6 +95,34 @@ export default function AddReaderModal({ visible, onClose, onSave, editingReader
               onChangeText={setName}
               placeholder="مثال: عبد الله، مصطفى..."
               placeholderTextColor="#94A3B8"
+              textAlign="right"
+            />
+          </View>
+
+          {/* حقل اسم المستخدم لتسجيل الدخول */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>معرف الدخول (اسم المستخدم):</Text>
+            <TextInput
+              style={styles.input}
+              value={username}
+              onChangeText={setUsername}
+              placeholder="مثال: user_1 أو mohammed"
+              placeholderTextColor="#94A3B8"
+              autoCapitalize="none"
+              textAlign="right"
+            />
+          </View>
+
+          {/* حقل كلمة المرور */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>كلمة المرور:</Text>
+            <TextInput
+              style={styles.input}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="مثال: 123456"
+              placeholderTextColor="#94A3B8"
+              secureTextEntry
               textAlign="right"
             />
           </View>
