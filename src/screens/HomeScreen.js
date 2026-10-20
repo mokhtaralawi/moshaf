@@ -35,8 +35,10 @@ import ChangePasswordModal from '../components/ChangePasswordModal';
 import AdminSettingsModal from '../components/AdminSettingsModal';
 import AdminProfileModal from '../components/AdminProfileModal';
 import UnreadReminderModal from '../components/UnreadReminderModal';
+import GroupChatModal from '../components/GroupChatModal';
 import SyncStatusBadge from '../components/SyncStatusBadge';
 import { subscribeSyncStatus } from '../services/syncService';
+import { initChatService, subscribeUnreadCount } from '../services/chatService';
 import { useAppTheme, THEME_MODES } from '../context/ThemeContext';
 
 export default function HomeScreen({ currentUser: initialUser, onLogout, onUserUpdated }) {
@@ -56,6 +58,8 @@ export default function HomeScreen({ currentUser: initialUser, onLogout, onUserU
   const [isAdminSettingsVisible, setIsAdminSettingsVisible] = useState(false);
   const [isAdminProfileVisible, setIsAdminProfileVisible] = useState(false);
   const [isUnreadReminderVisible, setIsUnreadReminderVisible] = useState(false);
+  const [isChatModalVisible, setIsChatModalVisible] = useState(false);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [editingReader, setEditingReader] = useState(null);
 
   // حالات قراءة الورد اليومية
@@ -136,6 +140,10 @@ export default function HomeScreen({ currentUser: initialUser, onLogout, onUserU
   // تحميل البيانات ومتابعة التحديثات اللحظية من السحابة وفحص مؤقت التذكير الدوري
   useEffect(() => {
     initApp();
+    if (currentUser) {
+      initChatService(currentUser).catch((e) => console.log('Admin chat init:', e));
+    }
+    const unreadUnsub = subscribeUnreadCount((count) => setUnreadChatCount(count));
     const unsubscribe = subscribeSyncStatus((status) => {
       if (status.hasRemoteUpdates) {
         initApp();
@@ -150,9 +158,10 @@ export default function HomeScreen({ currentUser: initialUser, onLogout, onUserU
 
     return () => {
       unsubscribe();
+      if (unreadUnsub) unreadUnsub();
       clearInterval(timer);
     };
-  }, [initApp, checkScheduledReminder]);
+  }, [initApp, checkScheduledReminder, currentUser]);
 
   // تغيير مقدار الورد اليومي (جزء، جزأين، 3)
   const handleWirdCountChange = async (count) => {
@@ -478,6 +487,50 @@ export default function HomeScreen({ currentUser: initialUser, onLogout, onUserU
 
             {/* قسم أدوات التحكم (محدد الورد + أزرار العمليات + ترويسة القائمة) */}
             <View style={styles.contentSection}>
+              {/* بطاقة غرفة المحادثة الجماعية المشفرة E2EE */}
+              <TouchableOpacity
+                style={[
+                  styles.adminChatCard,
+                  {
+                    backgroundColor: isDark ? colors.bgCard : '#FFFFFF',
+                    borderColor: isDark ? colors.cardBorder : '#D1FAE5',
+                  },
+                ]}
+                onPress={() => setIsChatModalVisible(true)}
+                activeOpacity={0.85}
+              >
+                <View style={styles.adminChatCardLeft}>
+                  {unreadChatCount > 0 ? (
+                    <View style={[styles.unreadBadgePill, { backgroundColor: colors.accent }]}>
+                      <Text style={styles.unreadBadgePillText}>{unreadChatCount} جديدة</Text>
+                    </View>
+                  ) : (
+                    <View style={[styles.chatEnterPill, { backgroundColor: isDark ? '#064E3B' : '#ECFDF5' }]}>
+                      <Text style={[styles.chatEnterArrow, { color: colors.accent }]}>دخول 💬</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.adminChatCardRight}>
+                  <View style={[styles.chatIconBox, { backgroundColor: isDark ? '#064E3B' : '#ECFDF5' }]}>
+                    <Text style={styles.chatIconEmoji}>💬</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-start', flex: 1 }}>
+                    <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.chatCardTitle, { color: colors.textPrimary }]}>
+                        ملتقى الحلقة (المحادثة الجماعية)
+                      </Text>
+                      <View style={[styles.chatBadgeE2ee, { backgroundColor: isDark ? '#064E3B' : '#D1FAE5' }]}>
+                        <Text style={[styles.chatBadgeE2eeText, { color: colors.accent }]}>🔒 E2EE</Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.chatCardSub, { color: colors.textSecondary }]}>
+                      محادثة جماعية مشفرة وموقعة رقمياً بينك وبين جميع القراء
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+
               {/* محدد مقدار الورد اليومي (Pill Tabs) */}
               <View style={styles.wirdSelectorContainer}>
                 <Text style={[styles.selectorLabel, isDark && { color: colors.textSecondary }]}>مقدار الورد اليومي:</Text>
@@ -624,6 +677,13 @@ export default function HomeScreen({ currentUser: initialUser, onLogout, onUserU
         reminderTimeStr={formatArabicTime(reminderHour, reminderMinute)}
         onOpenTimeSettings={() => setIsReminderModalVisible(true)}
       />
+
+      {/* نافذة الدردشة الجماعية المشفرة E2EE */}
+      <GroupChatModal
+        visible={isChatModalVisible}
+        onClose={() => setIsChatModalVisible(false)}
+        currentUser={currentUser}
+      />
     </SafeAreaView>
   );
 }
@@ -632,6 +692,76 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAF8', // خلفية عاجية مريحة للعين
+  },
+  adminChatCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  adminChatCardLeft: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingLeft: 4,
+  },
+  adminChatCardRight: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  chatIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatIconEmoji: {
+    fontSize: 22,
+  },
+  chatCardTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  chatCardSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  chatBadgeE2ee: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+  },
+  chatBadgeE2eeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  unreadBadgePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  unreadBadgePillText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  chatEnterPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  chatEnterArrow: {
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   header: {
     backgroundColor: '#064E3B', // زمردي ملكي داكن

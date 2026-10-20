@@ -17,6 +17,8 @@ const SYNC_KEYS = {
     ANNOUNCEMENTS: '@quran_wird_announcements',
     MOTIVATIONAL: '@quran_wird_motivational_msg',
     ADMINS: '@quran_wird_admins_list',
+    GROUP_MESSAGES: '@quran_wird_group_messages',
+    CHAT_PUBLIC_KEYS: '@quran_wird_chat_public_keys_map',
   },
 };
 
@@ -57,6 +59,8 @@ export const applyActionsReducer = (currentState, actions = []) => {
   if (!state.announcements) state.announcements = [];
   if (!state.admins) state.admins = [];
   if (!state.settings) state.settings = {};
+  if (!state.groupMessages) state.groupMessages = [];
+  if (!state.chatPublicKeys) state.chatPublicKeys = {};
 
   for (const action of actions) {
     const { type, payload } = action;
@@ -202,6 +206,26 @@ export const applyActionsReducer = (currentState, actions = []) => {
           if (name) admin.name = name;
           if (username) admin.username = username;
           if (newPassword) admin.password = newPassword;
+        }
+        break;
+      }
+      case 'SEND_GROUP_MESSAGE': {
+        if (!state.groupMessages) state.groupMessages = [];
+        if (payload.message) {
+          const exists = state.groupMessages.some((m) => m.id === payload.message.id);
+          if (!exists) {
+            state.groupMessages.push(payload.message);
+            if (state.groupMessages.length > 500) {
+              state.groupMessages = state.groupMessages.slice(-500);
+            }
+          }
+        }
+        break;
+      }
+      case 'REGISTER_CHAT_PUBLIC_KEY': {
+        if (!state.chatPublicKeys) state.chatPublicKeys = {};
+        if (payload.userId && payload.publicKey) {
+          state.chatPublicKeys[payload.userId] = payload.publicKey;
         }
         break;
       }
@@ -602,6 +626,12 @@ const applyCloudStateToLocal = async (cloudState) => {
     }
     if (cloudState.admins && Array.isArray(cloudState.admins)) {
       promises.push(AsyncStorage.setItem(map.ADMINS, JSON.stringify(cloudState.admins)));
+    }
+    if (cloudState.groupMessages && Array.isArray(cloudState.groupMessages)) {
+      promises.push(AsyncStorage.setItem(map.GROUP_MESSAGES, JSON.stringify(cloudState.groupMessages)));
+    }
+    if (cloudState.chatPublicKeys && typeof cloudState.chatPublicKeys === 'object') {
+      promises.push(AsyncStorage.setItem(map.CHAT_PUBLIC_KEYS, JSON.stringify(cloudState.chatPublicKeys)));
     }
 
     await Promise.all(promises);

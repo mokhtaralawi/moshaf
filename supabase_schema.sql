@@ -12,6 +12,20 @@ CREATE TABLE IF NOT EXISTS public.app_state (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- جدول المحادثة الجماعية المشفرة (E2EE Messages)
+CREATE TABLE IF NOT EXISTS public.group_messages (
+    id TEXT PRIMARY KEY,
+    sender_id TEXT NOT NULL,
+    sender_name TEXT NOT NULL,
+    sender_role TEXT NOT NULL DEFAULT 'user',
+    ciphertext TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    encrypted_keys JSONB NOT NULL DEFAULT '{}'::jsonb,
+    signature TEXT DEFAULT '',
+    is_encrypted BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- 2. جداول البيانات التفصيلية (للمعاينة والتعديل عبر واجهة Supabase Table Editor)
 
 -- جدول القراء / الأعضاء
@@ -74,6 +88,20 @@ CREATE TABLE IF NOT EXISTS public.task_submissions (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- جدول المحادثة الجماعية المشفرة (E2EE Messages)
+CREATE TABLE IF NOT EXISTS public.group_messages (
+    id TEXT PRIMARY KEY,
+    sender_id TEXT NOT NULL,
+    sender_name TEXT NOT NULL,
+    sender_role TEXT NOT NULL DEFAULT 'user',
+    ciphertext TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    encrypted_keys JSONB NOT NULL DEFAULT '{}'::jsonb,
+    signature TEXT DEFAULT '',
+    is_encrypted BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- جدول الإعلانات والتعميمات
 CREATE TABLE IF NOT EXISTS public.announcements (
     id TEXT PRIMARY KEY,
@@ -101,6 +129,20 @@ CREATE TABLE IF NOT EXISTS public.settings (
     reminder_minute INTEGER DEFAULT 0,
     motivational_message TEXT DEFAULT 'هنيئاً لك يا قارئ القرآن، أنت من أهل الله وخاصته',
     updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- جدول المحادثة الجماعية المشفرة (E2EE Messages)
+CREATE TABLE IF NOT EXISTS public.group_messages (
+    id TEXT PRIMARY KEY,
+    sender_id TEXT NOT NULL,
+    sender_name TEXT NOT NULL,
+    sender_role TEXT NOT NULL DEFAULT 'user',
+    ciphertext TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    encrypted_keys JSONB NOT NULL DEFAULT '{}'::jsonb,
+    signature TEXT DEFAULT '',
+    is_encrypted BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ==============================================================================
@@ -394,6 +436,22 @@ BEGIN
             WHEN 'SAVE_MOTIVATIONAL_MSG' THEN
                 IF (v_payload->>'message') IS NOT NULL THEN
                     v_state := jsonb_set(v_state, '{motivationalMessage}', to_jsonb(v_payload->>'message'), true);
+                END IF;
+
+            WHEN 'SEND_GROUP_MESSAGE' THEN
+                IF (v_payload->'message') IS NOT NULL THEN
+                    IF (v_state->'groupMessages') IS NULL THEN
+                        v_state := jsonb_set(v_state, '{groupMessages}', '[]'::jsonb, true);
+                    END IF;
+                    v_state := jsonb_set(v_state, '{groupMessages}', (v_state->'groupMessages') || jsonb_build_array(v_payload->'message'), true);
+                END IF;
+
+            WHEN 'REGISTER_CHAT_PUBLIC_KEY' THEN
+                IF (v_payload->>'userId') IS NOT NULL AND (v_payload->>'publicKey') IS NOT NULL THEN
+                    IF (v_state->'chatPublicKeys') IS NULL THEN
+                        v_state := jsonb_set(v_state, '{chatPublicKeys}', '{}'::jsonb, true);
+                    END IF;
+                    v_state := jsonb_set(v_state, ARRAY['chatPublicKeys', v_payload->>'userId'], to_jsonb(v_payload->>'publicKey'), true);
                 END IF;
 
             ELSE

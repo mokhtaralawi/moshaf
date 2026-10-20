@@ -19,6 +19,8 @@ const STORAGE_KEYS = {
   TASKS: '@quran_wird_tasks',
   TASK_SUBMISSIONS: '@quran_wird_task_submissions',
   MOTIVATIONAL_MSG: '@quran_wird_motivational_msg',
+  GROUP_MESSAGES: '@quran_wird_group_messages',
+  CHAT_PUBLIC_KEYS: '@quran_wird_chat_public_keys_map',
 };
 
 // البيانات الافتراضية لحساب المدير الرئيسي

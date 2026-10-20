@@ -40,7 +40,9 @@ import {
 } from '../utils/wirdCalculator';
 import SyncStatusBadge from '../components/SyncStatusBadge';
 import UserSettingsModal from '../components/UserSettingsModal';
+import GroupChatModal from '../components/GroupChatModal';
 import { subscribeSyncStatus } from '../services/syncService';
+import { initChatService, subscribeUnreadCount } from '../services/chatService';
 import { useAppTheme } from '../context/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -48,6 +50,8 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
   const { isDark, colors } = useAppTheme();
   const [currentUser, setCurrentUser] = useState(initialUser);
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
+  const [isChatVisible, setIsChatVisible] = useState(false);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [currentStatus, setCurrentStatus] = useState('pending'); // 'read' | 'pending' | 'excused'
   const [statusTimestamp, setStatusTimestamp] = useState(null);
   const [juzCount, setJuzCount] = useState(1);
@@ -161,13 +165,20 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
 
   useEffect(() => {
     loadData();
+    if (currentUser) {
+      initChatService(currentUser).catch((e) => console.log('Chat init error:', e));
+    }
+    const unreadUnsub = subscribeUnreadCount((count) => setUnreadChatCount(count));
     const unsubscribe = subscribeSyncStatus((status) => {
       if (status.hasRemoteUpdates) {
         loadData();
       }
     });
-    return () => unsubscribe();
-  }, [loadData]);
+    return () => {
+      unsubscribe();
+      if (unreadUnsub) unreadUnsub();
+    };
+  }, [loadData, currentUser]);
 
   // تسجيل إنجاز تكليف (أديتها ✅ أو اعتذر ✋)
   const handleTaskAction = async (taskId, status, excuseReason = '') => {
@@ -288,6 +299,50 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
       </View>
 
       <ScrollView contentContainerStyle={[styles.scrollContent, isDark && { backgroundColor: colors.bgPage }]} showsVerticalScrollIndicator={false}>
+        {/* بطاقة غرفة الدردشة الجماعية المشفرة E2EE */}
+        <TouchableOpacity
+          style={[
+            styles.chatEntryBanner,
+            {
+              backgroundColor: isDark ? colors.bgCard : '#FFFFFF',
+              borderColor: isDark ? colors.cardBorder : '#D1FAE5',
+            },
+          ]}
+          onPress={() => setIsChatVisible(true)}
+          activeOpacity={0.85}
+        >
+          <View style={styles.chatEntryLeft}>
+            {unreadChatCount > 0 ? (
+              <View style={[styles.unreadBadgePill, { backgroundColor: colors.accent }]}>
+                <Text style={styles.unreadBadgePillText}>{unreadChatCount} جديدة</Text>
+              </View>
+            ) : (
+              <View style={[styles.chatEnterPill, { backgroundColor: isDark ? '#064E3B' : '#ECFDF5' }]}>
+                <Text style={[styles.chatEnterArrow, { color: colors.accent }]}>دخول 💬</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.chatEntryRight}>
+            <View style={[styles.chatIconBox, { backgroundColor: isDark ? '#064E3B' : '#ECFDF5' }]}>
+              <Text style={styles.chatIconEmoji}>💬</Text>
+            </View>
+            <View style={{ alignItems: 'flex-start', flex: 1 }}>
+              <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+                <Text style={[styles.chatEntryTitle, { color: colors.textPrimary }]}>
+                  ملتقى أهل القرآن (المحادثة الجماعية)
+                </Text>
+                <View style={[styles.e2eePill, { backgroundColor: isDark ? '#064E3B' : '#D1FAE5' }]}>
+                  <Text style={[styles.e2eePillText, { color: colors.accent }]}>🔒 E2EE</Text>
+                </View>
+              </View>
+              <Text style={[styles.chatEntrySub, { color: colors.textSecondary }]}>
+                تواصل مباشر ومشفر بين جميع أعضاء الحلقة
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+
         {/* شريط الإعلانات والتنبيهات التفاعلية الصادرة من الإدارة (يختفي فور الضغط عليه) */}
         {announcements
           .filter((ann) => {
@@ -782,6 +837,13 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
           }
         }}
       />
+
+      {/* نافذة الدردشة الجماعية المشفرة E2EE */}
+      <GroupChatModal
+        visible={isChatVisible}
+        onClose={() => setIsChatVisible(false)}
+        currentUser={currentUser}
+      />
     </SafeAreaView>
   );
 }
@@ -790,6 +852,76 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#064E3B',
+  },
+  chatEntryBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  chatEntryLeft: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingLeft: 4,
+  },
+  chatEntryRight: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  chatIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatIconEmoji: {
+    fontSize: 22,
+  },
+  chatEntryTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  chatEntrySub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  e2eePill: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+  },
+  e2eePillText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  unreadBadgePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  unreadBadgePillText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  chatEnterPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  chatEnterArrow: {
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   header: {
     backgroundColor: '#064E3B',
