@@ -9,7 +9,8 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
+  StatusBar,
+  Keyboard,
   ActivityIndicator,
   Alert,
 } from 'react-native';
@@ -19,33 +20,60 @@ import {
   sendGroupMessage,
   subscribeChatMessages,
   setChatActiveState,
+  loadChatGroups,
+  createOrUpdateChatGroup,
+  deleteChatGroup,
+  subscribeGroups,
+  DEFAULT_MAIN_GROUP,
 } from '../services/chatService';
 import ChatSecurityModal from './ChatSecurityModal';
+import CreateGroupModal from './CreateGroupModal';
 
 export default function GroupChatModal({ visible, onClose, currentUser }) {
   const { colors, isDark } = useAppTheme();
   const [messages, setMessages] = useState([]);
+  const [groups, setGroups] = useState([DEFAULT_MAIN_GROUP]);
+  const [activeGroup, setActiveGroup] = useState(DEFAULT_MAIN_GROUP);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isGroupPickerVisible, setIsGroupPickerVisible] = useState(false);
+  const [createGroupModalVisible, setCreateGroupModalVisible] = useState(false);
+  const [editingGroup, setEditingGroup] = useState(null);
   const [securityModalVisible, setSecurityModalVisible] = useState(false);
-  const flatListRef = useRef(null);
 
+  const flatListRef = useRef(null);
+  const isAdmin = currentUser?.role === 'admin';
   const currentUserId = String(currentUser?.id || currentUser?.readerId || currentUser?.username || '');
 
+  // 1. تحميل المجموعات والرسائل عند فتح الشاشة
   useEffect(() => {
-    let unsubscribe = null;
+    let unsubscribeMsgs = null;
+    let unsubscribeGrp = null;
 
     if (visible && currentUser) {
       setChatActiveState(true);
 
-      loadChatMessages(currentUser).then((msgs) => {
+      // تحميل المجموعات
+      loadChatGroups(currentUser).then((grps) => {
+        setGroups(grps);
+        if (grps.length > 0 && !activeGroup) {
+          setActiveGroup(grps[0]);
+        }
+      });
+
+      // تحميل الرسائل للمجموعة الحالية
+      loadChatMessages(currentUser, activeGroup?.id || 'group_main').then((msgs) => {
         setMessages(msgs);
         setLoading(false);
       });
 
-      unsubscribe = subscribeChatMessages((newMsgs) => {
+      unsubscribeMsgs = subscribeChatMessages((newMsgs) => {
         setMessages(newMsgs);
+      });
+
+      unsubscribeGrp = subscribeGroups((updatedGroups) => {
+        setGroups(updatedGroups);
       });
     }
 
@@ -53,9 +81,64 @@ export default function GroupChatModal({ visible, onClose, currentUser }) {
       if (visible) {
         setChatActiveState(false);
       }
-      if (unsubscribe) unsubscribe();
+      if (unsubscribeMsgs) unsubscribeMsgs();
+      if (unsubscribeGrp) unsubscribeGrp();
     };
-  }, [visible, currentUser]);
+  }, [visible, currentUser, activeGroup]);
+
+  // 2. مستمع لوحة المفاتيح للتمرير التلقائي لأسفل عند ظهور الكيبورد لمنع تغطية حقل الإدخال
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const sub = Keyboard.addListener(showEvent, () => {
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    });
+
+    return () => sub.remove();
+  }, []);
+
+  const handleSwitchGroup = (group) => {
+    setActiveGroup(group);
+    setIsGroupPickerVisible(false);
+    setLoading(true);
+    loadChatMessages(currentUser, group.id).then((msgs) => {
+      setMessages(msgs);
+      setLoading(false);
+    });
+  };
+
+  const handleGroupSaved = async (groupData) => {
+    await createOrUpdateChatGroup(groupData, currentUser);
+    setActiveGroup(groupData);
+    const updated = await loadChatGroups(currentUser);
+    setGroups(updated);
+    Alert.alert('نجاح ✅', `تم حفظ مجموعة "${groupData.name}" بنجاح.`);
+  };
+
+  const handleDeleteGroup = (group) => {
+    if (group.isDefault) {
+      Alert.alert('تنبيه', 'لا يمكن حذف المجموعة العامة');
+      return;
+    }
+    Alert.alert(
+      'تأكيد الحذف ⚠️',
+      `هل أنت متأكد من حذف مجموعة "${group.name}" نهائياً؟`,
+      [
+        { text: 'إلغاء', style: 'cancel' },
+        {
+          text: 'نعم، حذف',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteChatGroup(group.id);
+            setActiveGroup(DEFAULT_MAIN_GROUP);
+            const grps = await loadChatGroups(currentUser);
+            setGroups(grps);
+          },
+        },
+      ]
+    );
+  };
 
   const handleSend = async () => {
     if (!inputText.trim() || sending) return;
@@ -64,7 +147,12 @@ export default function GroupChatModal({ visible, onClose, currentUser }) {
     setSending(true);
 
     try {
-      const res = await sendGroupMessage({ text: textToSend, currentUser });
+      const res = await sendGroupMessage({
+        text: textToSend,
+        currentUser,
+        group: activeGroup,
+      });
+
       if (!res.success) {
         Alert.alert('خطأ', res.error || 'تعذر تشفير وإرسال الرسالة');
         setInputText(textToSend);
@@ -93,16 +181,11 @@ export default function GroupChatModal({ visible, onClose, currentUser }) {
 
   const renderMessageItem = ({ item }) => {
     const isMine = String(item.senderId) === currentUserId;
-    const isAdmin = item.senderRole === 'admin';
+    const isMsgAdmin = item.senderRole === 'admin';
     const isUndecryptable = item.isUndecryptable;
 
     return (
-      <View
-        style={[
-          styles.messageRow,
-          isMine ? styles.myMessageRow : styles.otherMessageRow,
-        ]}
-      >
+      <View style={[styles.messageRow, isMine ? styles.myMessageRow : styles.otherMessageRow]}>
         <View
           style={[
             styles.bubble,
@@ -120,12 +203,12 @@ export default function GroupChatModal({ visible, onClose, currentUser }) {
           {/* Sender Header for other members */}
           {!isMine && (
             <View style={styles.senderHeader}>
-              <Text style={[styles.senderName, { color: isAdmin ? colors.gold : colors.accent }]}>
+              <Text style={[styles.senderName, { color: isMsgAdmin ? colors.gold : colors.accent }]}>
                 {item.senderName || 'قارئ'}
               </Text>
-              {isAdmin && (
+              {isMsgAdmin && (
                 <View style={[styles.adminBadge, { backgroundColor: colors.goldBg, borderColor: colors.goldBorder }]}>
-                  <Text style={[styles.adminBadgeText, { color: colors.gold }]}>المشرف ⭐️</Text>
+                  <Text style={[styles.adminBadgeText, { color: colors.gold }]}>👑 مشرف</Text>
                 </View>
               )}
             </View>
@@ -178,57 +261,158 @@ export default function GroupChatModal({ visible, onClose, currentUser }) {
     );
   };
 
+  // معالجة تباعد الترويسة مع شريط الإشعارات والـ Notch
+  const statusBarOffset = Platform.OS === 'android' ? (StatusBar.currentHeight ? StatusBar.currentHeight + 8 : 28) : 12;
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.bgPage }]}>
-        {/* Top Header */}
-        <View style={[styles.header, { backgroundColor: colors.bgPrimary, borderBottomColor: colors.border }]}>
-          <View style={styles.headerLeft}>
+      <View style={[styles.container, { backgroundColor: colors.bgPage }]}>
+        <StatusBar barStyle="light-content" backgroundColor={colors.bgPrimary} />
+
+        {/* 1. Header with exact status bar safe spacing */}
+        <View style={[styles.header, { backgroundColor: colors.bgPrimary, paddingTop: statusBarOffset }]}>
+          <View style={styles.headerRight}>
             <TouchableOpacity onPress={onClose} style={styles.backBtn} activeOpacity={0.7}>
               <Text style={[styles.backText, { color: colors.textHeader }]}>✕</Text>
             </TouchableOpacity>
 
-            <View style={styles.avatarWrap}>
-              <Text style={styles.avatarEmoji}>📖</Text>
-              <View style={[styles.onlineDot, { backgroundColor: colors.accent }]} />
-            </View>
-
-            <View style={styles.headerInfo}>
-              <View style={styles.titleRow}>
-                <Text style={[styles.groupTitle, { color: colors.textHeader }]}>
-                  ملتقى أهل القرآن
-                </Text>
-                <View style={[styles.e2eeBadge, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
-                  <Text style={styles.e2eeBadgeText}>🔒 E2EE</Text>
-                </View>
+            {/* Group Selector button */}
+            <TouchableOpacity
+              onPress={() => setIsGroupPickerVisible(!isGroupPickerVisible)}
+              style={styles.groupSelectorBtn}
+              activeOpacity={0.8}
+            >
+              <View style={styles.avatarWrap}>
+                <Text style={styles.avatarEmoji}>{activeGroup.isDefault ? '📖' : '👥'}</Text>
+                <View style={[styles.onlineDot, { backgroundColor: colors.accent }]} />
               </View>
-              <Text style={[styles.groupSub, { color: 'rgba(255, 255, 255, 0.7)' }]}>
-                حلقة التلاوة • مشفرة بمفتاح RSA
-              </Text>
-            </View>
+
+              <View style={styles.headerInfo}>
+                <View style={styles.titleRow}>
+                  <Text style={[styles.groupTitle, { color: colors.textHeader }]} numberOfLines={1}>
+                    {activeGroup.name}
+                  </Text>
+                  <Text style={{ color: colors.gold, fontSize: 12 }}>▼</Text>
+                </View>
+                <Text style={[styles.groupSub, { color: 'rgba(255, 255, 255, 0.7)' }]} numberOfLines={1}>
+                  {activeGroup.memberIds?.length ? `${activeGroup.memberIds.length} عضواً` : 'جميع الأعضاء'} • 🔒 E2EE
+                </Text>
+              </View>
+            </TouchableOpacity>
           </View>
 
-          {/* Security details button */}
-          <TouchableOpacity
-            onPress={() => setSecurityModalVisible(true)}
-            style={styles.securityBtn}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.securityBtnIcon}>🛡️</Text>
-          </TouchableOpacity>
+          {/* Action buttons on header left */}
+          <View style={styles.headerActions}>
+            {isAdmin && (
+              <TouchableOpacity
+                onPress={() => {
+                  setEditingGroup(null);
+                  setCreateGroupModalVisible(true);
+                }}
+                style={styles.newGroupBtn}
+                activeOpacity={0.7}
+                title="إنشاء مجموعة جديدة"
+              >
+                <Text style={styles.newGroupBtnText}>➕ مجموعة</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              onPress={() => setSecurityModalVisible(true)}
+              style={styles.securityBtn}
+              activeOpacity={0.7}
+              title="فحص أمان التشفير"
+            >
+              <Text style={styles.securityBtnIcon}>🛡️</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Security Banner */}
+        {/* 2. Group Selection Drawer / Dropdown if toggled */}
+        {isGroupPickerVisible && (
+          <View style={[styles.groupDropdown, { backgroundColor: colors.bgCard, borderColor: colors.border }]}>
+            <View style={styles.groupDropdownHeader}>
+              <Text style={[styles.groupDropdownTitle, { color: colors.textPrimary }]}>
+                اختر مجموعة المحادثة ({groups.length})
+              </Text>
+              {isAdmin && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setIsGroupPickerVisible(false);
+                    setEditingGroup(null);
+                    setCreateGroupModalVisible(true);
+                  }}
+                  style={[styles.smallAddBtn, { backgroundColor: colors.accentLight }]}
+                >
+                  <Text style={[styles.smallAddBtnText, { color: colors.accent }]}>➕ مجموعة جديدة</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <FlatList
+              data={groups}
+              keyExtractor={(item) => item.id}
+              style={{ maxHeight: 200 }}
+              renderItem={({ item }) => {
+                const isSelected = item.id === activeGroup.id;
+                return (
+                  <View style={[styles.groupRowItem, isSelected && { backgroundColor: isDark ? '#064E3B30' : '#ECFDF5' }]}>
+                    <TouchableOpacity
+                      style={styles.groupSelectTouch}
+                      onPress={() => handleSwitchGroup(item)}
+                    >
+                      <Text style={{ fontSize: 16 }}>{item.isDefault ? '📖' : '👥'}</Text>
+                      <View style={{ flex: 1, alignItems: 'flex-end', marginHorizontal: 8 }}>
+                        <Text style={[styles.groupItemName, { color: isSelected ? colors.accent : colors.textPrimary }]}>
+                          {item.name}
+                        </Text>
+                        <Text style={[styles.groupItemSub, { color: colors.textSecondary }]}>
+                          {item.isDefault ? 'مجموعة عامة للجميع' : `${item.memberIds?.length || 0} عضواً`}
+                        </Text>
+                      </View>
+                      {isSelected && <Text style={{ color: colors.accent, fontWeight: 'bold' }}>✓</Text>}
+                    </TouchableOpacity>
+
+                    {/* Admin actions for custom group */}
+                    {isAdmin && !item.isDefault && (
+                      <View style={styles.groupItemActions}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setIsGroupPickerVisible(false);
+                            setEditingGroup(item);
+                            setCreateGroupModalVisible(true);
+                          }}
+                          style={styles.iconMiniBtn}
+                        >
+                          <Text style={{ fontSize: 13 }}>⚙️</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleDeleteGroup(item)}
+                          style={styles.iconMiniBtn}
+                        >
+                          <Text style={{ fontSize: 13 }}>🗑️</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                );
+              }}
+            />
+          </View>
+        )}
+
+        {/* 3. Security Status Banner */}
         <View style={[styles.encryptionBanner, { backgroundColor: isDark ? '#04221A' : '#ECFDF5', borderBottomColor: colors.cardBorder }]}>
           <Text style={[styles.bannerText, { color: colors.accent }]}>
-            🔐 الرسائل مشفرة بنظام RSA-1024-OAEP و AES-256 من هاتف إلى هاتف
+            🔐 رسائل «{activeGroup.name}» مشفرة بنظام RSA / AES بين أعضائها فقط
           </Text>
         </View>
 
-        {/* Messages FlatList */}
+        {/* 4. Keyboard Avoiding View wrapping messages and input to prevent overlap */}
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.chatArea}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         >
           {loading ? (
             <View style={styles.loadingContainer}>
@@ -241,10 +425,10 @@ export default function GroupChatModal({ visible, onClose, currentUser }) {
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyIcon}>💬</Text>
               <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
-                مرحباً بك في ملتقى الحلقة القرآني
+                مرحباً بك في {activeGroup.name}
               </Text>
               <Text style={[styles.emptyDesc, { color: colors.textSecondary }]}>
-                ابدأ المحادثة مع إخوانك في الحلقة؛ جميع الرسائل مشفرة تماماً ولا يمكن لأي خادم قراءتها.
+                ابدأ المحادثة مع إخوانك؛ جميع الرسائل مشفرة من طرف لطرف ولا يمكن قراءتها من أي خادم.
               </Text>
             </View>
           ) : (
@@ -254,17 +438,18 @@ export default function GroupChatModal({ visible, onClose, currentUser }) {
               keyExtractor={(item) => item.id}
               renderItem={renderMessageItem}
               contentContainerStyle={styles.listContent}
+              keyboardShouldPersistTaps="handled"
               onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
               onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
             />
           )}
 
-          {/* Input Bar */}
+          {/* 5. Chat Input Bar */}
           <View style={[styles.inputBar, { backgroundColor: colors.bgCard, borderTopColor: colors.border }]}>
             <View style={[styles.inputWrapper, { backgroundColor: colors.bgSubtle, borderColor: colors.border }]}>
               <TextInput
                 style={[styles.textInput, { color: colors.textPrimary }]}
-                placeholder="اكتب رسالة مشفرة..."
+                placeholder={`اكتب رسالة مشفرة لـ ${activeGroup.name}...`}
                 placeholderTextColor={colors.textMuted}
                 value={inputText}
                 onChangeText={setInputText}
@@ -295,13 +480,25 @@ export default function GroupChatModal({ visible, onClose, currentUser }) {
           </View>
         </KeyboardAvoidingView>
 
-        {/* Security Details Modal */}
+        {/* 6. Security Details Modal */}
         <ChatSecurityModal
           visible={securityModalVisible}
           onClose={() => setSecurityModalVisible(false)}
           currentUser={currentUser}
         />
-      </SafeAreaView>
+
+        {/* 7. Create/Edit Group Modal */}
+        <CreateGroupModal
+          visible={createGroupModalVisible}
+          onClose={() => {
+            setCreateGroupModalVisible(false);
+            setEditingGroup(null);
+          }}
+          currentUser={currentUser}
+          existingGroup={editingGroup}
+          onGroupSaved={handleGroupSaved}
+        />
+      </View>
     </Modal>
   );
 }
@@ -314,39 +511,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
     borderBottomWidth: 1,
   },
-  headerLeft: {
+  headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     flex: 1,
   },
   backBtn: {
-    padding: 6,
+    padding: 8,
   },
   backText: {
     fontSize: 20,
     fontWeight: 'bold',
   },
+  groupSelectorBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
   avatarWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
   avatarEmoji: {
-    fontSize: 20,
+    fontSize: 18,
   },
   onlineDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
     borderWidth: 2,
     borderColor: '#FFFFFF',
     position: 'absolute',
@@ -360,33 +563,98 @@ const styles = StyleSheet.create({
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
   },
   groupTitle: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: 'bold',
-  },
-  e2eeBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  e2eeBadgeText: {
-    color: '#34D399',
-    fontSize: 10,
-    fontWeight: 'bold',
+    maxWidth: 160,
   },
   groupSub: {
-    fontSize: 11,
+    fontSize: 10.5,
     marginTop: 2,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  newGroupBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: 'rgba(217, 119, 6, 0.25)',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  newGroupBtnText: {
+    color: '#FDE68A',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
   securityBtn: {
-    padding: 8,
-    borderRadius: 12,
+    padding: 7,
+    borderRadius: 10,
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
   },
   securityBtnIcon: {
-    fontSize: 18,
+    fontSize: 16,
+  },
+  groupDropdown: {
+    borderBottomWidth: 1.5,
+    padding: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  groupDropdownHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  groupDropdownTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  smallAddBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  smallAddBtnText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  groupRowItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  groupSelectTouch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  groupItemName: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  groupItemSub: {
+    fontSize: 10,
+  },
+  groupItemActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 6,
+  },
+  iconMiniBtn: {
+    padding: 4,
   },
   encryptionBanner: {
     paddingVertical: 6,
@@ -425,11 +693,11 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   emptyIcon: {
-    fontSize: 48,
-    marginBottom: 12,
+    fontSize: 44,
+    marginBottom: 10,
   },
   emptyTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
     marginBottom: 6,
     textAlign: 'center',
@@ -445,7 +713,7 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
   myMessageRow: {
-    justifyContent: 'flex-start', // RTL: own messages on left or right as preferred
+    justifyContent: 'flex-start',
   },
   otherMessageRow: {
     justifyContent: 'flex-end',

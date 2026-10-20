@@ -21,6 +21,7 @@ const STORAGE_KEYS = {
   MOTIVATIONAL_MSG: '@quran_wird_motivational_msg',
   GROUP_MESSAGES: '@quran_wird_group_messages',
   CHAT_PUBLIC_KEYS: '@quran_wird_chat_public_keys_map',
+  CHAT_GROUPS: '@quran_wird_chat_groups',
 };
 
 // البيانات الافتراضية لحساب المدير الرئيسي
@@ -874,8 +875,13 @@ export const addAnnouncement = async (title, message) => {
 /**
  * 20. استرجاع قائمة التكاليف والمهام اليومية (القرآن، الأذكار، الأنشطة المخصصة)
  */
-export const loadTasks = async () => {
+export const loadTasks = async (forceRefresh = false) => {
   try {
+    if (forceRefresh) {
+      try {
+        await pullLatestFromCloud(true);
+      } catch (_e) {}
+    }
     const jsonValue = await AsyncStorage.getItem(STORAGE_KEYS.TASKS);
     if (jsonValue !== null) {
       const parsed = JSON.parse(jsonValue);
@@ -932,7 +938,8 @@ export const createTask = async ({ title, description, category, targetCount, un
       createdAt: new Date().toISOString(),
     };
     const updated = [...tasks, newTask];
-    await saveTasks(updated);
+    await AsyncStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(updated));
+    await enqueueSyncAction('SAVE_TASKS', { tasks: updated });
     await enqueueSyncAction('CREATE_TASK', { task: newTask });
     return { success: true, task: newTask };
   } catch (e) {
@@ -948,7 +955,8 @@ export const deleteTask = async (taskId) => {
   try {
     const tasks = await loadTasks();
     const updated = tasks.filter((t) => t.id !== taskId);
-    await saveTasks(updated);
+    await AsyncStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(updated));
+    await enqueueSyncAction('SAVE_TASKS', { tasks: updated });
     await enqueueSyncAction('DELETE_TASK', { taskId });
     return true;
   } catch (e) {
@@ -964,7 +972,26 @@ export const loadTaskSubmissions = async (dateKey = getDateKey(0)) => {
   try {
     const jsonValue = await AsyncStorage.getItem(STORAGE_KEYS.TASK_SUBMISSIONS);
     const all = jsonValue !== null ? JSON.parse(jsonValue) : {};
-    return all[dateKey] || {};
+    const result = { ...(all[dateKey] || {}) };
+
+    // دعم المفاتيح المسطحة القادمة من السحابة بصيغة dateKey_taskId_readerId
+    Object.keys(all).forEach((key) => {
+      if (key.startsWith(`${dateKey}_`)) {
+        const parts = key.split('_');
+        if (parts.length >= 3) {
+          const readerId = parts[parts.length - 1];
+          const taskId = parts.slice(1, -1).join('_');
+          if (!result[taskId]) result[taskId] = {};
+          result[taskId][readerId] = {
+            status: all[key].status,
+            excuseReason: all[key].reason || all[key].excuseReason || '',
+            timestamp: all[key].timestamp,
+          };
+        }
+      }
+    });
+
+    return result;
   } catch (error) {
     console.error('خطأ أثناء قراءة إنجاز التكاليف:', error);
     return {};

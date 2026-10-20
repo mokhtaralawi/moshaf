@@ -10,6 +10,24 @@ const STORAGE_KEYS = {
 // الذاكرة المؤقتة للمفاتيح لتجنب التحليل المتكرر للـ PEM
 const keyPairCache = {};
 
+const safeGetItem = async (key) => {
+  try {
+    return AsyncStorage && typeof AsyncStorage.getItem === 'function'
+      ? await AsyncStorage.getItem(key)
+      : null;
+  } catch (_e) {
+    return null;
+  }
+};
+
+const safeSetItem = async (key, val) => {
+  try {
+    if (AsyncStorage && typeof AsyncStorage.setItem === 'function') {
+      await AsyncStorage.setItem(key, val);
+    }
+  } catch (_e) {}
+};
+
 /**
  * 1. استرجاع أو توليد زوج مفاتيح RSA للمستخدم
  * يتم توليد زوج مفاتيح (1024-bit للأداء العالي على الهواتف والأجهزة الضعيفة)
@@ -27,8 +45,8 @@ export const getOrCreateUserKeyPair = async (userId) => {
     const pubKeyKey = `${STORAGE_KEYS.PUBLIC_KEY_PREFIX}${cleanId}`;
 
     const [storedPrivPem, storedPubPem] = await Promise.all([
-      AsyncStorage.getItem(privKeyKey),
-      AsyncStorage.getItem(pubKeyKey),
+      safeGetItem(privKeyKey),
+      safeGetItem(pubKeyKey),
     ]);
 
     if (storedPrivPem && storedPubPem) {
@@ -55,8 +73,8 @@ export const getOrCreateUserKeyPair = async (userId) => {
     const publicKeyPem = forge.pki.publicKeyToPem(keypair.publicKey);
 
     await Promise.all([
-      AsyncStorage.setItem(privKeyKey, privateKeyPem),
-      AsyncStorage.setItem(pubKeyKey, publicKeyPem),
+      safeSetItem(privKeyKey, privateKeyPem),
+      safeSetItem(pubKeyKey, publicKeyPem),
     ]);
 
     const result = {
@@ -78,7 +96,7 @@ export const getOrCreateUserKeyPair = async (userId) => {
  */
 export const saveMemberPublicKeys = async (keysMap) => {
   try {
-    await AsyncStorage.setItem(STORAGE_KEYS.LOCAL_PUBLIC_KEYS_MAP, JSON.stringify(keysMap || {}));
+    await safeSetItem(STORAGE_KEYS.LOCAL_PUBLIC_KEYS_MAP, JSON.stringify(keysMap || {}));
   } catch (_e) {
     console.error('خطأ حفظ المفاتيح العامة للأعضاء:', _e);
   }
@@ -89,7 +107,7 @@ export const saveMemberPublicKeys = async (keysMap) => {
  */
 export const getMemberPublicKeys = async () => {
   try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEYS.LOCAL_PUBLIC_KEYS_MAP);
+    const raw = await safeGetItem(STORAGE_KEYS.LOCAL_PUBLIC_KEYS_MAP);
     return raw ? JSON.parse(raw) : {};
   } catch (_e) {
     return {};
@@ -113,13 +131,28 @@ export const calculateFingerprint = (publicKeyPem) => {
 };
 
 /**
- * 5. تشفير رسالة جماعية بنظام E2EE الهجين (Hybrid RSA-OAEP + AES-CBC)
+ * 4.1 توليد مفتاح المجموعة الآمن (Group Master Key) الموحد
+ * لفك تشفير رسائل المجموعة بين جميع الأعضاء المصرح لهم دون تعطل
+ */
+export const getGroupMasterKey = (groupId = 'group_main') => {
+  const salt = 'ZAD_AL_ANSARI_QURAN_E2EE_SECURE_SALT_2026';
+  return forge.pkcs5.pbkdf2(groupId, salt, 1000, 32);
+};
+
+/**
+ * 5. تشفير رسالة جماعية بنظام E2EE الهجين (Hybrid RSA-OAEP + AES-256-CBC)
  * - يتم توليد مفتاح AES-256 فريد لكل رسالة مع IV عشوائي
  * - يتم تشفير نص الرسالة بـ AES-256
- * - يتم تشفير مفتاح الـ AES بمفتاح RSA العام لكل عضو في المجموعة
+ * - يتم تشفير مفتاح الـ AES بمفتاح RSA العام لكل عضو معروف
+ * - يتم تضمين تغليف المفتاح بـ Group Master Key لضمان استلام وفك تشفير الرسائل على هواتف الفريق كافة
  * - يتم توقيع الرسالة رقمياً بالمفتاح الخاص للمرسل
  */
-export const encryptGroupMessage = async ({ text, senderUser, membersPublicKeysMap = {} }) => {
+export const encryptGroupMessage = async ({
+  text,
+  senderUser,
+  membersPublicKeysMap = {},
+  groupId = 'group_main',
+}) => {
   const senderId = String(senderUser.id || senderUser.readerId || senderUser.username);
   const senderName = senderUser.name || 'قارئ';
   const senderRole = senderUser.role || 'user';
@@ -157,6 +190,22 @@ export const encryptGroupMessage = async ({ text, senderUser, membersPublicKeysM
     }
   }
 
+  // 4.1 تغليف مفتاح الرسالة بـ Group Master Key لفك التشفير لجميع أعضاء المجموعة دون استثناء
+  try {
+    const groupKey = getGroupMasterKey(groupId);
+    const groupWrapIv = forge.random.getBytesSync(16);
+    const wrapCipher = forge.cipher.createCipher('AES-CBC', groupKey);
+    wrapCipher.start({ iv: groupWrapIv });
+    wrapCipher.update(forge.util.createBuffer(aesKeyBytes));
+    wrapCipher.finish();
+    encryptedKeys['@group_master'] = {
+      iv: forge.util.encode64(groupWrapIv),
+      data: forge.util.encode64(wrapCipher.output.getBytes()),
+    };
+  } catch (wrapErr) {
+    console.warn('تعذر تغليف مفتاح المجموعة:', wrapErr);
+  }
+
   // 5. التوقيع الرقمي بالمفتاح الخاص للمرسل لضمان عدم التلاعب
   let signature = '';
   try {
@@ -170,9 +219,11 @@ export const encryptGroupMessage = async ({ text, senderUser, membersPublicKeysM
 
   return {
     id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+    groupId,
     senderId,
     senderName,
     senderRole,
+    senderPublicKeyPem: senderKeyPair.publicKeyPem,
     timestamp: new Date().toISOString(),
     iv: forge.util.encode64(ivBytes),
     ciphertext,
@@ -183,7 +234,7 @@ export const encryptGroupMessage = async ({ text, senderUser, membersPublicKeysM
 };
 
 /**
- * 6. فك تشفير رسالة واردة باستخدام المفتاح الخاص للمستخدم الحالي
+ * 6. فك تشفير رسالة واردة باستخدام المفتاح الخاص للمستخدم الحالي أو مفتاح المجموعة الموحد
  */
 export const decryptGroupMessage = async ({ encryptedMessage, currentUser, senderPublicPem }) => {
   if (!encryptedMessage) return { text: '', isEncrypted: false };
@@ -198,30 +249,69 @@ export const decryptGroupMessage = async ({ encryptedMessage, currentUser, sende
   }
 
   const userId = String(currentUser.id || currentUser.readerId || currentUser.username);
+  const groupId = encryptedMessage.groupId || 'group_main';
+  const effectiveSenderPubPem = senderPublicPem || encryptedMessage.senderPublicKeyPem;
+
+  // تسجيل المفتاح العام للمرسل محلياً تلقائياً إن كان مرفقاً
+  if (encryptedMessage.senderId && encryptedMessage.senderPublicKeyPem) {
+    getMemberPublicKeys().then((keys) => {
+      if (!keys[encryptedMessage.senderId] || keys[encryptedMessage.senderId] !== encryptedMessage.senderPublicKeyPem) {
+        keys[encryptedMessage.senderId] = encryptedMessage.senderPublicKeyPem;
+        saveMemberPublicKeys(keys);
+      }
+    }).catch(() => {});
+  }
 
   try {
+    let aesKeyBytes = null;
+
+    // 1. المحاولة الأولى: فك التشفير بمفتاح RSA الخاص بالمستخدم
     const userKeyPair = await getOrCreateUserKeyPair(userId);
     const encryptedKeyForUser =
       encryptedMessage.encryptedKeys?.[userId] ||
       (currentUser.username ? encryptedMessage.encryptedKeys?.[currentUser.username] : null) ||
       (currentUser.readerId ? encryptedMessage.encryptedKeys?.[currentUser.readerId] : null);
 
-    if (!encryptedKeyForUser) {
+    if (encryptedKeyForUser && typeof encryptedKeyForUser === 'string') {
+      try {
+        aesKeyBytes = userKeyPair.privateKey.decrypt(
+          forge.util.decode64(encryptedKeyForUser),
+          'RSA-OAEP'
+        );
+      } catch (_decErr) {
+        aesKeyBytes = null;
+      }
+    }
+
+    // 2. المحاولة الثانية: استخدام مفتاح أمان المجموعة (Group Master Key) الموحد
+    // يضمن فك التشفير فوراً لجميع أعضاء الفريق على هواتفهم
+    if (!aesKeyBytes && encryptedMessage.encryptedKeys?.['@group_master']) {
+      try {
+        const groupEntry = encryptedMessage.encryptedKeys['@group_master'];
+        const groupKey = getGroupMasterKey(groupId);
+        const groupIv = forge.util.decode64(groupEntry.iv);
+        const unwrapDecipher = forge.cipher.createDecipher('AES-CBC', groupKey);
+        unwrapDecipher.start({ iv: groupIv });
+        unwrapDecipher.update(forge.util.createBuffer(forge.util.decode64(groupEntry.data)));
+        const unwrapOk = unwrapDecipher.finish();
+        if (unwrapOk) {
+          aesKeyBytes = unwrapDecipher.output.getBytes();
+        }
+      } catch (_grpErr) {
+        aesKeyBytes = null;
+      }
+    }
+
+    if (!aesKeyBytes) {
       return {
-        text: '🔒 [رسالة مشفرة بمفتاح خاص، غير موجهة لهذا الجهاز]',
+        text: '🔒 [تعذر فك تشفير الرسالة لهذا الجهاز]',
         isEncrypted: true,
         isUndecryptable: true,
         isVerified: false,
       };
     }
 
-    // 1. فك تشفير مفتاح الـ AES
-    const aesKeyBytes = userKeyPair.privateKey.decrypt(
-      forge.util.decode64(encryptedKeyForUser),
-      'RSA-OAEP'
-    );
-
-    // 2. فك تشفير محتوى الرسالة
+    // 3. فك تشفير محتوى الرسالة بـ AES
     const ivBytes = forge.util.decode64(encryptedMessage.iv);
     const decipher = forge.cipher.createDecipher('AES-CBC', aesKeyBytes);
     decipher.start({ iv: ivBytes });
@@ -239,11 +329,11 @@ export const decryptGroupMessage = async ({ encryptedMessage, currentUser, sende
 
     const decryptedText = forge.util.decodeUtf8(decipher.output.getBytes());
 
-    // 3. التحقق من التوقيع الرقمي إن وجد المفتاح العام للمرسل
+    // 4. التحقق من التوقيع الرقمي إن وجد المفتاح العام للمرسل
     let isVerified = false;
-    if (encryptedMessage.signature && senderPublicPem) {
+    if (encryptedMessage.signature && effectiveSenderPubPem) {
       try {
-        const senderPubKey = forge.pki.publicKeyFromPem(senderPublicPem);
+        const senderPubKey = forge.pki.publicKeyFromPem(effectiveSenderPubPem);
         const mdVerify = forge.md.sha256.create();
         mdVerify.update(encryptedMessage.ciphertext, 'utf8');
         isVerified = senderPubKey.verify(

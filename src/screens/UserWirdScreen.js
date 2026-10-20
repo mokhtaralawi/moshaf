@@ -15,6 +15,7 @@ import {
   KeyboardAvoidingView,
   TouchableWithoutFeedback,
   Keyboard,
+  RefreshControl,
 } from 'react-native';
 import {
   loadDailyStatuses,
@@ -41,7 +42,7 @@ import {
 import SyncStatusBadge from '../components/SyncStatusBadge';
 import UserSettingsModal from '../components/UserSettingsModal';
 import GroupChatModal from '../components/GroupChatModal';
-import { subscribeSyncStatus } from '../services/syncService';
+import { subscribeSyncStatus, pullLatestFromCloud } from '../services/syncService';
 import { initChatService, subscribeUnreadCount } from '../services/chatService';
 import { useAppTheme } from '../context/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -64,6 +65,20 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
   const [taskSubmissions, setTaskSubmissions] = useState({});
   const [excuseModalTask, setExcuseModalTask] = useState(null);
   const [excuseReasonInput, setExcuseReasonInput] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  // تحديث البيانات يدويًا عند السحب للأسفل
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await pullLatestFromCloud(true);
+      await loadData();
+    } catch (e) {
+      console.warn('Pull to refresh error:', e);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // رسالة التحفيز والتهنئة عند إتمام الورد (المخصصة من المدير)
   const [motivationalMessage, setMotivationalMessage] = useState(DEFAULT_MOTIVATIONAL_MSG);
@@ -165,6 +180,13 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
 
   useEffect(() => {
     loadData();
+    // سحب أحدث بيانات من السحابة في الخلفية لضمان جلب أي تكاليف جديدة أضافها المدير
+    pullLatestFromCloud().then((hasNew) => {
+      if (hasNew) {
+        loadData();
+      }
+    }).catch(() => {});
+
     if (currentUser) {
       initChatService(currentUser).catch((e) => console.log('Chat init error:', e));
     }
@@ -298,7 +320,18 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={[styles.scrollContent, isDark && { backgroundColor: colors.bgPage }]} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, isDark && { backgroundColor: colors.bgPage }]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#059669', '#F59E0B']}
+            tintColor={isDark ? colors.gold : '#059669'}
+          />
+        }
+      >
         {/* بطاقة غرفة الدردشة الجماعية المشفرة E2EE */}
         <TouchableOpacity
           style={[

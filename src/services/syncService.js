@@ -19,6 +19,7 @@ const SYNC_KEYS = {
     ADMINS: '@quran_wird_admins_list',
     GROUP_MESSAGES: '@quran_wird_group_messages',
     CHAT_PUBLIC_KEYS: '@quran_wird_chat_public_keys_map',
+    CHAT_GROUPS: '@quran_wird_chat_groups',
   },
 };
 
@@ -61,6 +62,7 @@ export const applyActionsReducer = (currentState, actions = []) => {
   if (!state.settings) state.settings = {};
   if (!state.groupMessages) state.groupMessages = [];
   if (!state.chatPublicKeys) state.chatPublicKeys = {};
+  if (!state.chatGroups) state.chatGroups = [];
 
   for (const action of actions) {
     const { type, payload } = action;
@@ -229,6 +231,24 @@ export const applyActionsReducer = (currentState, actions = []) => {
         }
         break;
       }
+      case 'CREATE_OR_UPDATE_CHAT_GROUP': {
+        if (!state.chatGroups) state.chatGroups = [];
+        if (payload.group) {
+          const idx = state.chatGroups.findIndex((g) => g.id === payload.group.id);
+          if (idx >= 0) {
+            state.chatGroups[idx] = payload.group;
+          } else {
+            state.chatGroups.push(payload.group);
+          }
+        }
+        break;
+      }
+      case 'DELETE_CHAT_GROUP': {
+        if (payload.groupId && state.chatGroups) {
+          state.chatGroups = state.chatGroups.filter((g) => g.id !== payload.groupId);
+        }
+        break;
+      }
       default:
         break;
     }
@@ -384,42 +404,43 @@ export const processSyncQueue = async () => {
     let finalState = null;
     let finalLastMod = null;
 
-    // 1. المحاولة الأولى: الإرسال المباشر إلى Supabase (RPC أو upsert)
+    // 1. المحاولة الأولى: الإرسال المباشر إلى Supabase عبر دمج الحركات وتحديث app_state
     if (supabase) {
       try {
-        // تجربة تنفيذ الدالة الذرية apply_sync_actions على Supabase
-        const { data: rpcRes, error: rpcErr } = await supabase.rpc('apply_sync_actions', {
-          p_actions: queue,
-        });
+        const { data: currentRecord, error: fetchErr } = await supabase
+          .from('app_state')
+          .select('data')
+          .eq('id', 'zad_main')
+          .single();
 
-        if (!rpcErr && rpcRes && rpcRes.state) {
-          handled = true;
-          finalState = rpcRes.state;
-          finalLastMod = rpcRes.lastModified || new Date().toISOString();
-        } else {
-          // إذا لم تكن دالة الـ RPC منشأة بعد، نجري الدمج الذري عبر قراءة وتحديث app_state
-          const { data: currentRecord } = await supabase
+        if (!fetchErr && currentRecord && currentRecord.data) {
+          const updatedState = applyActionsReducer(currentRecord.data, queue);
+          const nowIso = new Date().toISOString();
+          const { error: updateErr } = await supabase
             .from('app_state')
-            .select('data')
-            .eq('id', 'zad_main')
-            .single();
+            .update({
+              data: updatedState,
+              last_modified: nowIso,
+            })
+            .eq('id', 'zad_main');
 
-          if (currentRecord && currentRecord.data) {
-            const updatedState = applyActionsReducer(currentRecord.data, queue);
-            const nowIso = new Date().toISOString();
-            const { error: upsertErr } = await supabase
-              .from('app_state')
-              .upsert({
-                id: 'zad_main',
-                data: updatedState,
-                last_modified: nowIso,
-              });
+          if (!updateErr) {
+            handled = true;
+            finalState = updatedState;
+            finalLastMod = nowIso;
+          }
+        }
 
-            if (!upsertErr) {
-              handled = true;
-              finalState = updatedState;
-              finalLastMod = nowIso;
-            }
+        // في حال تعذر التحديث المباشر نجرب تنفيذ الدالة الذرية apply_sync_actions
+        if (!handled) {
+          const { data: rpcRes, error: rpcErr } = await supabase.rpc('apply_sync_actions', {
+            p_actions: queue,
+          });
+
+          if (!rpcErr && rpcRes && rpcRes.state) {
+            handled = true;
+            finalState = rpcRes.state;
+            finalLastMod = rpcRes.lastModified || new Date().toISOString();
           }
         }
       } catch (sbErr) {
@@ -632,6 +653,9 @@ const applyCloudStateToLocal = async (cloudState) => {
     }
     if (cloudState.chatPublicKeys && typeof cloudState.chatPublicKeys === 'object') {
       promises.push(AsyncStorage.setItem(map.CHAT_PUBLIC_KEYS, JSON.stringify(cloudState.chatPublicKeys)));
+    }
+    if (cloudState.chatGroups && Array.isArray(cloudState.chatGroups)) {
+      promises.push(AsyncStorage.setItem(map.CHAT_GROUPS, JSON.stringify(cloudState.chatGroups)));
     }
 
     await Promise.all(promises);

@@ -411,6 +411,11 @@ BEGIN
             WHEN 'SAVE_SETTINGS' THEN
                 v_state := jsonb_set(v_state, '{settings}', (v_state->'settings') || v_payload, true);
 
+            WHEN 'SAVE_TASKS' THEN
+                IF (v_payload->'tasks') IS NOT NULL THEN
+                    v_state := jsonb_set(v_state, '{tasks}', v_payload->'tasks', true);
+                END IF;
+
             WHEN 'CREATE_TASK' THEN
                 IF (v_payload->'task') IS NOT NULL THEN
                     v_state := jsonb_set(v_state, '{tasks}', (v_state->'tasks') || jsonb_build_array(v_payload->'task'), true);
@@ -452,6 +457,35 @@ BEGIN
                         v_state := jsonb_set(v_state, '{chatPublicKeys}', '{}'::jsonb, true);
                     END IF;
                     v_state := jsonb_set(v_state, ARRAY['chatPublicKeys', v_payload->>'userId'], to_jsonb(v_payload->>'publicKey'), true);
+                END IF;
+
+            WHEN 'CREATE_OR_UPDATE_CHAT_GROUP' THEN
+                IF (v_payload->'group') IS NOT NULL THEN
+                    IF (v_state->'chatGroups') IS NULL THEN
+                        v_state := jsonb_set(v_state, '{chatGroups}', '[]'::jsonb, true);
+                    END IF;
+                    v_state := jsonb_set(
+                        v_state,
+                        '{chatGroups}',
+                        COALESCE(
+                            (SELECT jsonb_agg(elem) FROM jsonb_array_elements(v_state->'chatGroups') elem WHERE elem->>'id' <> (v_payload->'group'->>'id')),
+                            '[]'::jsonb
+                        ) || jsonb_build_array(v_payload->'group'),
+                        true
+                    );
+                END IF;
+
+            WHEN 'DELETE_CHAT_GROUP' THEN
+                IF (v_payload->>'groupId') IS NOT NULL AND (v_state->'chatGroups') IS NOT NULL THEN
+                    v_state := jsonb_set(
+                        v_state,
+                        '{chatGroups}',
+                        COALESCE(
+                            (SELECT jsonb_agg(elem) FROM jsonb_array_elements(v_state->'chatGroups') elem WHERE elem->>'id' <> (v_payload->>'groupId')),
+                            '[]'::jsonb
+                        ),
+                        true
+                    );
                 END IF;
 
             ELSE

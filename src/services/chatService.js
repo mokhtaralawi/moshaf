@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../utils/supabase';
 import { enqueueSyncAction } from './syncService';
+import { loadReaders, loadAdminAccounts } from './storageService';
 import {
   getOrCreateUserKeyPair,
   saveMemberPublicKeys,
@@ -14,12 +15,23 @@ const STORAGE_KEYS = {
   MESSAGES: '@quran_wird_group_messages',
   DECRYPTED_CACHE: '@quran_wird_chat_decrypted_cache',
   LAST_READ_TIMESTAMP: '@quran_wird_chat_last_read_ts',
+  GROUPS: '@quran_wird_chat_groups',
+};
+
+export const DEFAULT_MAIN_GROUP = {
+  id: 'group_main',
+  name: 'ملتقى أهل القرآن (العام)',
+  description: 'المجموعة العامة لجميع القراء والمشرفين',
+  isDefault: true,
+  memberIds: [],
 };
 
 // مراقبو تحديثات الرسائل
 const chatListeners = new Set();
 // مراقبو عداد الرسائل غير المقروءة
 const unreadListeners = new Set();
+// مراقبو قائمة المجموعات
+const groupsListeners = new Set();
 
 let realtimeChannel = null;
 let currentActiveUserId = null;
@@ -29,9 +41,7 @@ const notifyChatListeners = (messages) => {
   chatListeners.forEach((listener) => {
     try {
       listener(messages);
-    } catch (e) {
-      console.error('خطأ في إشعار مراقب الدردشة:', e);
-    }
+    } catch (_e) {}
   });
 };
 
@@ -39,10 +49,60 @@ const notifyUnreadListeners = (count) => {
   unreadListeners.forEach((listener) => {
     try {
       listener(count);
-    } catch (e) {
-      console.error('خطأ في إشعار عداد غير المقروء:', e);
-    }
+    } catch (_e) {}
   });
+};
+
+const notifyGroupsListeners = (groups) => {
+  groupsListeners.forEach((listener) => {
+    try {
+      listener(groups);
+    } catch (_e) {}
+  });
+};
+
+/**
+ * 0. استرجاع جميع الأعضاء المتاحين (المدراء + القراء) ليكون المدراء جزءاً من الفريق
+ */
+export const getAllAvailableMembers = async () => {
+  try {
+    const [readers, admins] = await Promise.all([
+      loadReaders(),
+      loadAdminAccounts(),
+    ]);
+
+    const map = new Map();
+
+    // 1. إضافة حسابات المدراء
+    (admins || []).forEach((a) => {
+      const id = String(a.id || a.username);
+      map.set(id, {
+        id,
+        name: a.name || 'مدير النظام',
+        username: a.username || 'admin',
+        role: 'admin',
+      });
+    });
+
+    // 2. إضافة القراء
+    (readers || []).forEach((r) => {
+      const id = String(r.id || r.username);
+      if (!map.has(id)) {
+        map.set(id, {
+          id,
+          name: r.name || 'قارئ مبارك',
+          username: r.username,
+          role: r.role || 'user',
+          currentJuz: r.currentJuz || 1,
+        });
+      }
+    });
+
+    return Array.from(map.values());
+  } catch (error) {
+    console.error('خطأ في استرجاع قائمة الأعضاء:', error);
+    return [];
+  }
 };
 
 /**
@@ -69,6 +129,7 @@ export const initChatService = async (currentUser) => {
       await enqueueSyncAction('REGISTER_CHAT_PUBLIC_KEY', {
         userId,
         userName: currentUser.name || 'قارئ',
+        role: currentUser.role || 'user',
         publicKey: keyPair.publicKeyPem,
         updatedAt: new Date().toISOString(),
       });
@@ -115,16 +176,27 @@ const setupRealtimeSubscription = (currentUser) => {
       }
     });
 
+    // استقبال تحديثات المجموعات
+    realtimeChannel.on('broadcast', { event: 'group_updated' }, async ({ payload }) => {
+      if (payload && payload.group) {
+        await saveLocalGroup(payload.group);
+      }
+    });
+
     realtimeChannel.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
-        // إشعار بوجود مفتاح المستخدم الحالي
         if (currentUser) {
           const userId = String(currentUser.id || currentUser.readerId || currentUser.username);
           getOrCreateUserKeyPair(userId).then((kp) => {
             realtimeChannel.send({
               type: 'broadcast',
               event: 'new_member_key',
-              payload: { userId, publicKey: kp.publicKeyPem },
+              payload: {
+                userId,
+                userName: currentUser.name,
+                role: currentUser.role,
+                publicKey: kp.publicKeyPem,
+              },
             }).catch(() => {});
           });
         }
@@ -136,12 +208,127 @@ const setupRealtimeSubscription = (currentUser) => {
 };
 
 /**
- * 3. استرجاع قائمة الرسائل وفك تشفيرها للمستخدم الحالي
+ * 3. استرجاع قائمة المجموعات المتاحة للمستخدم الحالي
+ * - المدير يرى جميع المجموعات
+ * - القارئ يرى المجموعة العامة + المجموعات التي هو عضو فيها
  */
-export const loadChatMessages = async (currentUser) => {
+export const loadChatGroups = async (currentUser) => {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.GROUPS);
+    const customGroups = raw ? JSON.parse(raw) : [];
+
+    const allGroups = [DEFAULT_MAIN_GROUP, ...customGroups];
+
+    if (!currentUser) return allGroups;
+
+    const myId = String(currentUser.id || currentUser.readerId || currentUser.username);
+    const isAdmin = currentUser.role === 'admin';
+
+    if (isAdmin) {
+      return allGroups;
+    }
+
+    // المستخدم العادي: يرى المجموعات التي ينتمي إليها
+    return allGroups.filter((g) => {
+      if (g.isDefault) return true;
+      if (!Array.isArray(g.memberIds) || g.memberIds.length === 0) return true;
+      return g.memberIds.map(String).includes(myId);
+    });
+  } catch (e) {
+    console.error('خطأ في استرجاع المجموعات:', e);
+    return [DEFAULT_MAIN_GROUP];
+  }
+};
+
+/**
+ * 3.1 حفظ مجموعة محلية
+ */
+const saveLocalGroup = async (group) => {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.GROUPS);
+    const groups = raw ? JSON.parse(raw) : [];
+    const idx = groups.findIndex((g) => g.id === group.id);
+    if (idx >= 0) {
+      groups[idx] = group;
+    } else {
+      groups.push(group);
+    }
+    await AsyncStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(groups));
+    notifyGroupsListeners([DEFAULT_MAIN_GROUP, ...groups]);
+  } catch (_e) {}
+};
+
+/**
+ * 3.2 إنشاء أو تعديل مجموعة جديدة من قبل المدير
+ */
+export const createOrUpdateChatGroup = async (groupData, currentUser) => {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.GROUPS);
+    const groups = raw ? JSON.parse(raw) : [];
+
+    const idx = groups.findIndex((g) => g.id === groupData.id);
+    if (idx >= 0) {
+      groups[idx] = groupData;
+    } else {
+      groups.push(groupData);
+    }
+
+    await AsyncStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(groups));
+
+    // بث لحظي
+    if (realtimeChannel) {
+      realtimeChannel.send({
+        type: 'broadcast',
+        event: 'group_updated',
+        payload: { group: groupData },
+      }).catch(() => {});
+    }
+
+    // إدراج في طابور المزامنة
+    await enqueueSyncAction('CREATE_OR_UPDATE_CHAT_GROUP', { group: groupData });
+
+    notifyGroupsListeners([DEFAULT_MAIN_GROUP, ...groups]);
+    return { success: true, group: groupData };
+  } catch (error) {
+    console.error('خطأ في إنشاء/تعديل المجموعة:', error);
+    return { success: false, error: 'تعذر حفظ المجموعة' };
+  }
+};
+
+/**
+ * 3.3 حذف مجموعة
+ */
+export const deleteChatGroup = async (groupId) => {
+  try {
+    if (groupId === 'group_main') {
+      return { success: false, error: 'لا يمكن حذف المجموعة العامة الرئيسية' };
+    }
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.GROUPS);
+    const groups = raw ? JSON.parse(raw) : [];
+    const updated = groups.filter((g) => g.id !== groupId);
+    await AsyncStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(updated));
+
+    await enqueueSyncAction('DELETE_CHAT_GROUP', { groupId });
+    notifyGroupsListeners([DEFAULT_MAIN_GROUP, ...updated]);
+    return { success: true };
+  } catch (_error) {
+    return { success: false, error: 'تعذر حذف المجموعة' };
+  }
+};
+
+/**
+ * 4. استرجاع قائمة الرسائل لمجموعة محددة وفك تشفيرها للمستخدم الحالي
+ */
+export const loadChatMessages = async (currentUser, targetGroupId = 'group_main') => {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.MESSAGES);
-    const messages = raw ? JSON.parse(raw) : [];
+    const allMessages = raw ? JSON.parse(raw) : [];
+
+    // تصفية الرسائل حسب المجموعة
+    const messages = allMessages.filter((m) => {
+      const gId = m.groupId || 'group_main';
+      return gId === targetGroupId;
+    });
 
     if (!currentUser) return messages;
 
@@ -153,17 +340,15 @@ export const loadChatMessages = async (currentUser) => {
 
     const decryptedList = await Promise.all(
       messages.map(async (msg) => {
-        // إذا كانت الرسالة محلولة ومخزنة مسبقاً
-        if (decryptedCache[msg.id]) {
+        if (decryptedCache[msg.id] && !decryptedCache[msg.id].isUndecryptable) {
           return {
             ...msg,
             decryptedText: decryptedCache[msg.id].text,
             isVerified: decryptedCache[msg.id].isVerified,
-            isUndecryptable: decryptedCache[msg.id].isUndecryptable,
+            isUndecryptable: false,
           };
         }
 
-        // فك تشفير الرسالة
         const senderPubPem = publicKeys[msg.senderId];
         const res = await decryptGroupMessage({
           encryptedMessage: msg,
@@ -199,31 +384,55 @@ export const loadChatMessages = async (currentUser) => {
 };
 
 /**
- * 4. إرسال رسالة جديدة مشفرة E2EE في المجموعة
+ * 5. إرسال رسالة جديدة مشفرة E2EE في مجموعة محددة
  */
-export const sendGroupMessage = async ({ text, currentUser }) => {
+export const sendGroupMessage = async ({ text, currentUser, group }) => {
   if (!text || !text.trim() || !currentUser) {
     return { success: false, error: 'النص مطلوب' };
   }
 
+  const activeGroup = group || DEFAULT_MAIN_GROUP;
+  const groupId = activeGroup.id || 'group_main';
+
   try {
     const cleanText = text.trim();
-    const membersKeys = await getMemberPublicKeys();
+    const allMembersKeys = await getMemberPublicKeys();
 
-    // 1. تشفير الرسالة بنظام RSA-OAEP / AES-256
+    // إذا كانت المجموعة مخصصة ولها قائمة أعضاء محددة، نشفر فقط لأعضاء هذه المجموعة + المرسل
+    let targetKeysMap = {};
+    if (activeGroup.memberIds && Array.isArray(activeGroup.memberIds) && activeGroup.memberIds.length > 0) {
+      const allowedSet = new Set(activeGroup.memberIds.map(String));
+      const senderId = String(currentUser.id || currentUser.readerId || currentUser.username);
+      allowedSet.add(senderId);
+
+      for (const [mid, pubPem] of Object.entries(allMembersKeys)) {
+        if (allowedSet.has(String(mid))) {
+          targetKeysMap[mid] = pubPem;
+        }
+      }
+    } else {
+      // المجموعة العامة تشمل جميع المفاتيح المسجلة
+      targetKeysMap = allMembersKeys;
+    }
+
+    // 1. تشفير الرسالة بنظام RSA-OAEP / AES-256 مع Group Master Key الموحد
     const encryptedPacket = await encryptGroupMessage({
       text: cleanText,
       senderUser: currentUser,
-      membersPublicKeysMap: membersKeys,
+      membersPublicKeysMap: targetKeysMap,
+      groupId,
     });
 
-    // 2. الحفظ في الذاكرة المحلية فوراً
+    encryptedPacket.groupId = groupId;
+    encryptedPacket.groupName = activeGroup.name;
+
+    // 2. الحفظ في الذاكرة المحلية
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.MESSAGES);
     const messages = raw ? JSON.parse(raw) : [];
     messages.push(encryptedPacket);
     await AsyncStorage.setItem(STORAGE_KEYS.MESSAGES, JSON.stringify(messages));
 
-    // 3. تخزين النص الصريح في الكاش المحلي للمرسل لتجنب فك تشفير رسالته لاحقاً
+    // 3. تخزين النص الصريح في الكاش المحلي للمرسل
     const rawCache = await AsyncStorage.getItem(STORAGE_KEYS.DECRYPTED_CACHE);
     const cache = rawCache ? JSON.parse(rawCache) : {};
     cache[encryptedPacket.id] = {
@@ -233,7 +442,7 @@ export const sendGroupMessage = async ({ text, currentUser }) => {
     };
     await AsyncStorage.setItem(STORAGE_KEYS.DECRYPTED_CACHE, JSON.stringify(cache));
 
-    // 4. البث اللحظي السريع عبر Supabase Realtime لجميع المتصلين
+    // 4. البث اللحظي عبر Supabase Realtime
     if (realtimeChannel) {
       realtimeChannel.send({
         type: 'broadcast',
@@ -247,13 +456,16 @@ export const sendGroupMessage = async ({ text, currentUser }) => {
       message: encryptedPacket,
     });
 
-    // إشعار الواجهات
-    const fullList = messages.map((m) => ({
-      ...m,
-      decryptedText: cache[m.id]?.text || '🔒 [مشفر]',
-      isVerified: cache[m.id]?.isVerified ?? true,
-    }));
-    notifyChatListeners(fullList);
+    // إشعار الواجهات برسائل هذه المجموعة
+    const groupMsgs = messages
+      .filter((m) => (m.groupId || 'group_main') === groupId)
+      .map((m) => ({
+        ...m,
+        decryptedText: cache[m.id]?.text || '🔒 [مشفر]',
+        isVerified: cache[m.id]?.isVerified ?? true,
+      }));
+
+    notifyChatListeners(groupMsgs);
 
     return { success: true, message: encryptedPacket };
   } catch (error) {
@@ -263,7 +475,7 @@ export const sendGroupMessage = async ({ text, currentUser }) => {
 };
 
 /**
- * 5. معالجة رسالة جديدة قادمة عبر Realtime أو المزامنة
+ * 6. معالجة رسالة جديدة قادمة عبر Realtime أو المزامنة
  */
 export const handleIncomingMessage = async (msgPacket, currentUser) => {
   try {
@@ -300,7 +512,7 @@ export const handleIncomingMessage = async (msgPacket, currentUser) => {
       await refreshUnreadCount();
     }
 
-    const currentList = await loadChatMessages(currentUser);
+    const currentList = await loadChatMessages(currentUser, msgPacket.groupId || 'group_main');
     notifyChatListeners(currentList);
   } catch (error) {
     console.error('خطأ في معالجة الرسالة الواردة:', error);
@@ -308,7 +520,7 @@ export const handleIncomingMessage = async (msgPacket, currentUser) => {
 };
 
 /**
- * 6. تعيين حالة فتح/إغلاق الشات لتصفير عداد الرسائل غير المقروءة
+ * 7. تعيين حالة فتح/إغلاق الشات لتصفير عداد الرسائل غير المقروءة
  */
 export const setChatActiveState = async (isOpen) => {
   isChatOpen = isOpen;
@@ -320,7 +532,7 @@ export const setChatActiveState = async (isOpen) => {
 };
 
 /**
- * 7. حساب عدد الرسائل غير المقروءة
+ * 8. حساب عدد الرسائل غير المقروءة
  */
 export const refreshUnreadCount = async () => {
   try {
@@ -348,39 +560,45 @@ export const refreshUnreadCount = async () => {
   }
 };
 
-/**
- * 8. الاشتراك في مراقبة الرسائل
- */
 export const subscribeChatMessages = (callback) => {
   chatListeners.add(callback);
   return () => chatListeners.delete(callback);
 };
 
-/**
- * 9. الاشتراك في مراقبة عدد الرسائل غير المقروءة
- */
 export const subscribeUnreadCount = (callback) => {
   unreadListeners.add(callback);
   refreshUnreadCount().then((c) => callback(c));
   return () => unreadListeners.delete(callback);
 };
 
+export const subscribeGroups = (callback) => {
+  groupsListeners.add(callback);
+  return () => groupsListeners.delete(callback);
+};
+
 /**
- * 10. تفاصيل أمان التشفير للعرض في نافذة الأمان
+ * 9. تفاصيل أمان التشفير للعرض في نافذة الأمان
  */
-export const getSecurityDetails = async (currentUser) => {
+export const getSecurityDetails = async (currentUser, group = null) => {
   if (!currentUser) return null;
   const userId = String(currentUser.id || currentUser.readerId || currentUser.username);
   const keyPair = await getOrCreateUserKeyPair(userId);
   const fingerprint = calculateFingerprint(keyPair.publicKeyPem);
   const memberKeys = await getMemberPublicKeys();
 
+  const activeGroup = group || DEFAULT_MAIN_GROUP;
+  const membersCount =
+    activeGroup.memberIds && activeGroup.memberIds.length > 0
+      ? activeGroup.memberIds.length
+      : Object.keys(memberKeys).length + 1;
+
   return {
     userId,
     userName: currentUser.name,
     fingerprint,
     publicKeyPem: keyPair.publicKeyPem,
-    membersCount: Object.keys(memberKeys).length + 1,
+    groupName: activeGroup.name,
+    membersCount,
     algorithm: 'RSA-1024-OAEP + AES-256-CBC (E2EE)',
   };
 };
