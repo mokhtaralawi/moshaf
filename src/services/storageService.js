@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DEFAULT_READERS } from '../constants/quranData';
-import { enqueueSyncAction, initSyncEngine } from './syncService';
+import { enqueueSyncAction, initSyncEngine, pullLatestFromCloud } from './syncService';
 import { sendInstantNotification } from './notificationService';
 
 // تهيئة محرك المزامنة التلقائية عند إقلاع التطبيق
@@ -93,19 +93,40 @@ export const normalizeReader = (r, idx = 0) => ({
 
 /**
  * 1. استرجاع قائمة القراء من ذاكرة الهاتف
- * إذا كانت الذاكرة فارغة (أول تشغيل)، يرجع القائمة الافتراضية بعد تهيئتها
+ * إذا كانت الذاكرة فارغة (أول تشغيل أو مسح بيانات أو هاتف جديد)،
+ * يسحب أحدث بيانات من السحابة أولاً لمنع مسح تقدم القراء المخزن في السحابة.
  */
 export const loadReaders = async () => {
   try {
     const jsonValue = await AsyncStorage.getItem(STORAGE_KEYS.READERS_LIST);
-    let list = [];
     if (jsonValue !== null) {
-      list = JSON.parse(jsonValue);
-    } else {
-      list = DEFAULT_READERS;
-      await saveReaders(list.map((r, idx) => normalizeReader(r, idx)));
+      const parsed = JSON.parse(jsonValue);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((r, idx) => normalizeReader(r, idx));
+      }
     }
-    return list.map((r, idx) => normalizeReader(r, idx));
+
+    // إذا كانت الذاكرة المحلية فارغة: محاولة السحب العاجل من السحابة أولاً
+    try {
+      const pulled = await pullLatestFromCloud(true);
+      if (pulled) {
+        const refreshedJson = await AsyncStorage.getItem(STORAGE_KEYS.READERS_LIST);
+        if (refreshedJson !== null) {
+          const list = JSON.parse(refreshedJson);
+          if (Array.isArray(list) && list.length > 0) {
+            return list.map((r, idx) => normalizeReader(r, idx));
+          }
+        }
+      }
+    } catch (pullErr) {
+      console.warn('تنبيه أثناء سحب القراء من السحابة:', pullErr);
+    }
+
+    // في حال تعذر الاتصال بالسحابة ولم تكن هناك بيانات سابقة،
+    // نعتمد القائمة الافتراضية محلياً فقط دون إرسال استبدال (enqueueSyncAction) إلى السحابة!
+    const defaultList = DEFAULT_READERS.map((r, idx) => normalizeReader(r, idx));
+    await AsyncStorage.setItem(STORAGE_KEYS.READERS_LIST, JSON.stringify(defaultList));
+    return defaultList;
   } catch (error) {
     console.error('خطأ أثناء قراءة قائمة القراء:', error);
     return DEFAULT_READERS.map((r, idx) => normalizeReader(r, idx));
@@ -331,8 +352,20 @@ export const loadAdminAccounts = async () => {
   try {
     const jsonValue = await AsyncStorage.getItem(STORAGE_KEYS.ADMINS_LIST);
     if (jsonValue !== null) {
-      return JSON.parse(jsonValue);
+      const parsed = JSON.parse(jsonValue);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
+
+    // سحب من السحابة إذا كانت الذاكرة فارغة
+    try {
+      await pullLatestFromCloud(true);
+      const refreshedJson = await AsyncStorage.getItem(STORAGE_KEYS.ADMINS_LIST);
+      if (refreshedJson !== null) {
+        const list = JSON.parse(refreshedJson);
+        if (Array.isArray(list) && list.length > 0) return list;
+      }
+    } catch (_e) {}
+
     const initialAdmins = [DEFAULT_ADMIN_CREDS];
     await AsyncStorage.setItem(STORAGE_KEYS.ADMINS_LIST, JSON.stringify(initialAdmins));
     return initialAdmins;
@@ -508,7 +541,19 @@ export const loadSettings = async () => {
 
   try {
     const jsonValue = await AsyncStorage.getItem(STORAGE_KEYS.WIRD_SETTINGS);
-    return jsonValue !== null ? { ...defaultSettings, ...JSON.parse(jsonValue) } : defaultSettings;
+    if (jsonValue !== null) {
+      return { ...defaultSettings, ...JSON.parse(jsonValue) };
+    }
+
+    try {
+      await pullLatestFromCloud(true);
+      const refreshedJson = await AsyncStorage.getItem(STORAGE_KEYS.WIRD_SETTINGS);
+      if (refreshedJson !== null) {
+        return { ...defaultSettings, ...JSON.parse(refreshedJson) };
+      }
+    } catch (_e) {}
+
+    return defaultSettings;
   } catch (error) {
     console.error('خطأ أثناء قراءة الإعدادات:', error);
     return defaultSettings;
@@ -636,7 +681,18 @@ export const getDateKey = (daysOffset = 0) => {
 export const loadDailyStatuses = async (dateKey = getDateKey(0)) => {
   try {
     const jsonValue = await AsyncStorage.getItem(STORAGE_KEYS.DAILY_STATUSES);
-    const allStatuses = jsonValue !== null ? JSON.parse(jsonValue) : {};
+    let allStatuses = jsonValue !== null ? JSON.parse(jsonValue) : null;
+
+    if (!allStatuses) {
+      try {
+        await pullLatestFromCloud(true);
+        const refreshedJson = await AsyncStorage.getItem(STORAGE_KEYS.DAILY_STATUSES);
+        allStatuses = refreshedJson !== null ? JSON.parse(refreshedJson) : {};
+      } catch (_e) {
+        allStatuses = {};
+      }
+    }
+
     return allStatuses[dateKey] || {};
   } catch (error) {
     console.error('خطأ أثناء قراءة حالات الورد اليومية:', error);
@@ -820,8 +876,19 @@ export const loadTasks = async () => {
   try {
     const jsonValue = await AsyncStorage.getItem(STORAGE_KEYS.TASKS);
     if (jsonValue !== null) {
-      return JSON.parse(jsonValue);
+      const parsed = JSON.parse(jsonValue);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
+
+    try {
+      await pullLatestFromCloud(true);
+      const refreshedJson = await AsyncStorage.getItem(STORAGE_KEYS.TASKS);
+      if (refreshedJson !== null) {
+        const list = JSON.parse(refreshedJson);
+        if (Array.isArray(list) && list.length > 0) return list;
+      }
+    } catch (_e) {}
+
     await AsyncStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(DEFAULT_TASKS));
     return DEFAULT_TASKS;
   } catch (error) {

@@ -33,6 +33,7 @@ import {
 } from '../services/storageService.js';
 import { sendInstantNotification } from '../services/notificationService.js';
 import { exportSurveyToPdf, printSurveyDirectly } from '../services/pdfService.js';
+import { useAppTheme, THEME_MODES } from '../context/ThemeContext';
 import { getServerUrl, setServerUrl, testServerConnection, testSupabaseConnection } from '../config/apiConfig.js';
 import { syncWithCloud, getSyncState } from '../services/syncService.js';
 import { checkAndApplyAppUpdate, getUpdateInfo } from '../services/otaUpdateService.js';
@@ -52,6 +53,7 @@ export default function AdminSettingsModal({
   onOpenReminderSettings,
   onOpenUnreadReminder,
 }) {
+  const { themeMode, setThemeMode, isDark, colors } = useAppTheme();
   const [activeTab, setActiveTab] = useState('wird'); // 'wird' | 'tasks' | 'accounts' | 'notifications' | 'survey'
 
   // إعدادات الورد اليومي
@@ -570,9 +572,9 @@ export default function AdminSettingsModal({
           <View style={styles.backdropArea} />
         </TouchableWithoutFeedback>
 
-        <View style={styles.modalContent}>
+        <View style={[styles.modalContent, isDark && { backgroundColor: colors.bgCard }]}>
           {/* رأس النافذة */}
-          <View style={styles.header}>
+          <View style={[styles.header, isDark && { backgroundColor: colors.bgPrimary, borderBottomColor: colors.gold }]}>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
               <Text style={styles.closeBtnText}>✕ إغلاق</Text>
             </TouchableOpacity>
@@ -584,70 +586,80 @@ export default function AdminSettingsModal({
           </View>
 
           {/* أزرار التبويبات (Tabs) */}
-          <View style={styles.tabBarWrapper}>
+          <View style={[styles.tabBarWrapper, isDark && { backgroundColor: colors.bgSubtle, borderBottomColor: colors.border }]}>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.tabBar}
             >
               <TouchableOpacity
-                style={[styles.tabItem, activeTab === 'wird' && styles.activeTabItem]}
+                style={[styles.tabItem, isDark && { backgroundColor: colors.bgCard, borderColor: colors.border }, activeTab === 'wird' && styles.activeTabItem]}
                 onPress={() => setActiveTab('wird')}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.tabItemText, activeTab === 'wird' && styles.activeTabText]}>
+                <Text style={[styles.tabItemText, isDark && { color: colors.textSecondary }, activeTab === 'wird' && styles.activeTabText]}>
                   📖 الورد
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.tabItem, activeTab === 'tasks' && styles.activeTabItem]}
+                style={[styles.tabItem, isDark && { backgroundColor: colors.bgCard, borderColor: colors.border }, activeTab === 'theme' && styles.activeTabItem]}
+                onPress={() => setActiveTab('theme')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.tabItemText, isDark && { color: colors.textSecondary }, activeTab === 'theme' && styles.activeTabText]}>
+                  🎨 المظهر
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.tabItem, isDark && { backgroundColor: colors.bgCard, borderColor: colors.border }, activeTab === 'tasks' && styles.activeTabItem]}
                 onPress={() => setActiveTab('tasks')}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.tabItemText, activeTab === 'tasks' && styles.activeTabText]}>
+                <Text style={[styles.tabItemText, isDark && { color: colors.textSecondary }, activeTab === 'tasks' && styles.activeTabText]}>
                   ⭐ التكاليف
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.tabItem, activeTab === 'accounts' && styles.activeTabItem]}
+                style={[styles.tabItem, isDark && { backgroundColor: colors.bgCard, borderColor: colors.border }, activeTab === 'accounts' && styles.activeTabItem]}
                 onPress={() => setActiveTab('accounts')}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.tabItemText, activeTab === 'accounts' && styles.activeTabText]}>
+                <Text style={[styles.tabItemText, isDark && { color: colors.textSecondary }, activeTab === 'accounts' && styles.activeTabText]}>
                   👥 الحسابات
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.tabItem, activeTab === 'notifications' && styles.activeTabItem]}
+                style={[styles.tabItem, isDark && { backgroundColor: colors.bgCard, borderColor: colors.border }, activeTab === 'notifications' && styles.activeTabItem]}
                 onPress={() => setActiveTab('notifications')}
                 activeOpacity={0.8}
               >
                 <Text
-                  style={[styles.tabItemText, activeTab === 'notifications' && styles.activeTabText]}
+                  style={[styles.tabItemText, isDark && { color: colors.textSecondary }, activeTab === 'notifications' && styles.activeTabText]}
                 >
                   📢 الإشعارات
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.tabItem, activeTab === 'survey' && styles.activeTabItem]}
+                style={[styles.tabItem, isDark && { backgroundColor: colors.bgCard, borderColor: colors.border }, activeTab === 'survey' && styles.activeTabItem]}
                 onPress={() => setActiveTab('survey')}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.tabItemText, activeTab === 'survey' && styles.activeTabText]}>
+                <Text style={[styles.tabItemText, isDark && { color: colors.textSecondary }, activeTab === 'survey' && styles.activeTabText]}>
                   📋 الاستبيان
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.tabItem, activeTab === 'cloud' && styles.activeTabItem]}
+                style={[styles.tabItem, isDark && { backgroundColor: colors.bgCard, borderColor: colors.border }, activeTab === 'cloud' && styles.activeTabItem]}
                 onPress={() => setActiveTab('cloud')}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.tabItemText, activeTab === 'cloud' && styles.activeTabText]}>
+                <Text style={[styles.tabItemText, isDark && { color: colors.textSecondary }, activeTab === 'cloud' && styles.activeTabText]}>
                   ☁️ السحابة والتحديث
                 </Text>
               </TouchableOpacity>
@@ -655,15 +667,163 @@ export default function AdminSettingsModal({
           </View>
 
           <ScrollView
-            style={styles.scrollArea}
+            style={[styles.scrollArea, isDark && { backgroundColor: colors.bgPage }]}
             contentContainerStyle={styles.scrollAreaContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
           >
+            {/* تبويب مظهر التطبيق المستقل */}
+            {activeTab === 'theme' && (
+              <View style={styles.tabContent}>
+                <View style={[styles.sectionCard, isDark && { backgroundColor: colors.bgSubtle, borderColor: colors.cardBorder }]}>
+                  <Text style={[styles.sectionTitle, isDark && { color: colors.gold }]}>🎨 مظهر ووضع التطبيق:</Text>
+                  <Text style={[styles.sectionDesc, isDark && { color: colors.textSecondary }]}>
+                    اختر المظهر المفضل للتطبيق (نهاري أو ليلي أو يتبع إعدادات جهازك).
+                  </Text>
+                  <View style={styles.themeSelectorRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.themeBtn,
+                        isDark && { backgroundColor: colors.bgCard, borderColor: colors.border },
+                        themeMode === THEME_MODES.LIGHT && styles.themeBtnActive,
+                      ]}
+                      onPress={() => setThemeMode(THEME_MODES.LIGHT)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.themeBtnIcon}>☀️</Text>
+                      <Text
+                        style={[
+                          styles.themeBtnText,
+                          isDark && { color: colors.textSecondary },
+                          themeMode === THEME_MODES.LIGHT && styles.themeBtnTextActive,
+                        ]}
+                      >
+                        نهاري
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.themeBtn,
+                        isDark && { backgroundColor: colors.bgCard, borderColor: colors.border },
+                        themeMode === THEME_MODES.DARK && styles.themeBtnActive,
+                      ]}
+                      onPress={() => setThemeMode(THEME_MODES.DARK)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.themeBtnIcon}>🌙</Text>
+                      <Text
+                        style={[
+                          styles.themeBtnText,
+                          isDark && { color: colors.textSecondary },
+                          themeMode === THEME_MODES.DARK && styles.themeBtnTextActive,
+                        ]}
+                      >
+                        ليلي
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.themeBtn,
+                        isDark && { backgroundColor: colors.bgCard, borderColor: colors.border },
+                        themeMode === THEME_MODES.SYSTEM && styles.themeBtnActive,
+                      ]}
+                      onPress={() => setThemeMode(THEME_MODES.SYSTEM)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.themeBtnIcon}>⚙️</Text>
+                      <Text
+                        style={[
+                          styles.themeBtnText,
+                          isDark && { color: colors.textSecondary },
+                          themeMode === THEME_MODES.SYSTEM && styles.themeBtnTextActive,
+                        ]}
+                      >
+                        النظام
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            )}
+
             {/* 1. تبويب الورد والأعضاء */}
             {activeTab === 'wird' && (
               <View style={styles.tabContent}>
+                {/* قسم مظهر التطبيق (الأوضاع: ليلي / نهاري / النظام) */}
+                <View style={[styles.sectionCard, isDark && { backgroundColor: colors.bgSubtle, borderColor: colors.cardBorder }]}>
+                  <Text style={[styles.sectionTitle, isDark && { color: colors.gold }]}>🎨 مظهر ووضع التطبيق:</Text>
+                  <Text style={[styles.sectionDesc, isDark && { color: colors.textSecondary }]}>
+                    اختر المظهر المفضل للتطبيق (نهاري أو ليلي أو يتبع إعدادات جهازك).
+                  </Text>
+                  <View style={styles.themeSelectorRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.themeBtn,
+                        isDark && { backgroundColor: colors.bgCard, borderColor: colors.border },
+                        themeMode === THEME_MODES.LIGHT && styles.themeBtnActive,
+                      ]}
+                      onPress={() => setThemeMode(THEME_MODES.LIGHT)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.themeBtnIcon}>☀️</Text>
+                      <Text
+                        style={[
+                          styles.themeBtnText,
+                          isDark && { color: colors.textSecondary },
+                          themeMode === THEME_MODES.LIGHT && styles.themeBtnTextActive,
+                        ]}
+                      >
+                        نهاري
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.themeBtn,
+                        isDark && { backgroundColor: colors.bgCard, borderColor: colors.border },
+                        themeMode === THEME_MODES.DARK && styles.themeBtnActive,
+                      ]}
+                      onPress={() => setThemeMode(THEME_MODES.DARK)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.themeBtnIcon}>🌙</Text>
+                      <Text
+                        style={[
+                          styles.themeBtnText,
+                          isDark && { color: colors.textSecondary },
+                          themeMode === THEME_MODES.DARK && styles.themeBtnTextActive,
+                        ]}
+                      >
+                        ليلي
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.themeBtn,
+                        isDark && { backgroundColor: colors.bgCard, borderColor: colors.border },
+                        themeMode === THEME_MODES.SYSTEM && styles.themeBtnActive,
+                      ]}
+                      onPress={() => setThemeMode(THEME_MODES.SYSTEM)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.themeBtnIcon}>⚙️</Text>
+                      <Text
+                        style={[
+                          styles.themeBtnText,
+                          isDark && { color: colors.textSecondary },
+                          themeMode === THEME_MODES.SYSTEM && styles.themeBtnTextActive,
+                        ]}
+                      >
+                        النظام
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
                 {/* قسم تعديل مقدار الورد اليومي إلى عدة أجزاء */}
                 <View style={styles.sectionCard}>
                   <Text style={styles.sectionTitle}>📖 تعديل مقدار الورد اليومي (عدة أجزاء):</Text>
@@ -2640,5 +2800,39 @@ const styles = StyleSheet.create({
   unreadButtonsRow: {
     flexDirection: 'row-reverse',
     gap: 10,
+  },
+  themeSelectorRow: {
+    flexDirection: 'row-reverse',
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  themeBtn: {
+    flex: 1,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+  },
+  themeBtnActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#059669',
+  },
+  themeBtnIcon: {
+    fontSize: 15,
+  },
+  themeBtnText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#64748B',
+  },
+  themeBtnTextActive: {
+    color: '#059669',
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -30,6 +30,7 @@ import {
   submitUserTask,
   loadMotivationalMessage,
   DEFAULT_MOTIVATIONAL_MSG,
+  saveCurrentUser,
 } from '../services/storageService';
 import {
   getReaderWirdDetails,
@@ -40,8 +41,11 @@ import {
 import SyncStatusBadge from '../components/SyncStatusBadge';
 import UserSettingsModal from '../components/UserSettingsModal';
 import { subscribeSyncStatus } from '../services/syncService';
+import { useAppTheme } from '../context/ThemeContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function UserWirdScreen({ currentUser: initialUser, onLogout, onUserUpdated }) {
+  const { isDark, colors } = useAppTheme();
   const [currentUser, setCurrentUser] = useState(initialUser);
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const [currentStatus, setCurrentStatus] = useState('pending'); // 'read' | 'pending' | 'excused'
@@ -65,6 +69,7 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
   const [activeSurvey, setActiveSurvey] = useState(null);
   const [mySurveyVote, setMySurveyVote] = useState(null); // 'yes' | 'no' | null
   const [announcements, setAnnouncements] = useState([]);
+  const [dismissedAnnouncements, setDismissedAnnouncements] = useState([]);
 
   const todayKey = getDateKey(0);
   const todayArabicDate = getFormattedArabicDate(0);
@@ -79,22 +84,32 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
   // نسبة التقدم في الختمة
   const progressPercent = Math.min(100, Math.round((readerJuz / 30) * 100));
 
-  useEffect(() => {
-    loadData();
-    const unsubscribe = subscribeSyncStatus((status) => {
-      if (status.hasRemoteUpdates) {
-        loadData();
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     const settings = await loadSettings();
     setJuzCount(settings.juzCount || 1);
 
     const readers = await loadReaders();
     setGroupReaders(readers);
+
+    // مزامنة الجزء الحالي والاسم لبيانات القارئ فور ورود تحديث من السحابة أو المشرف
+    if (currentUser) {
+      const myId = String(currentUser.readerId || currentUser.id);
+      const myProfile = readers.find((r) => String(r.id) === myId || r.username === currentUser.username);
+      if (myProfile) {
+        if (myProfile.currentJuz !== currentUser.currentJuz || myProfile.name !== currentUser.name) {
+          const updatedUser = {
+            ...currentUser,
+            currentJuz: myProfile.currentJuz || 1,
+            name: myProfile.name || currentUser.name,
+          };
+          setCurrentUser(updatedUser);
+          await saveCurrentUser(updatedUser);
+          if (onUserUpdated) {
+            onUserUpdated(updatedUser);
+          }
+        }
+      }
+    }
 
     const statuses = await loadDailyStatuses(todayKey);
     setGroupStatuses(statuses);
@@ -124,7 +139,35 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
     // تحميل الرسالة التحفيزية المخصصة من المدير
     const msg = await loadMotivationalMessage();
     setMotivationalMessage(msg);
+
+    // تحميل قائمة التنبيهات التي تم إغلاقها مسبقاً
+    try {
+      const dismissedRaw = await AsyncStorage.getItem('@quran_wird_dismissed_anns');
+      if (dismissedRaw) {
+        setDismissedAnnouncements(JSON.parse(dismissedRaw));
+      }
+    } catch (_e) {}
+  }, [currentUser, onUserUpdated, todayKey]);
+
+  // إخفاء التذكير فور الضغط عليه وحفظه كمقروء
+  const handleDismissAnnouncement = async (annId) => {
+    try {
+      const idStr = String(annId);
+      const updated = Array.from(new Set([...dismissedAnnouncements, idStr]));
+      setDismissedAnnouncements(updated);
+      await AsyncStorage.setItem('@quran_wird_dismissed_anns', JSON.stringify(updated));
+    } catch (_e) {}
   };
+
+  useEffect(() => {
+    loadData();
+    const unsubscribe = subscribeSyncStatus((status) => {
+      if (status.hasRemoteUpdates) {
+        loadData();
+      }
+    });
+    return () => unsubscribe();
+  }, [loadData]);
 
   // تسجيل إنجاز تكليف (أديتها ✅ أو اعتذر ✋)
   const handleTaskAction = async (taskId, status, excuseReason = '') => {
@@ -199,11 +242,11 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#064E3B" translucent={false} />
+    <SafeAreaView style={[styles.container, isDark && { backgroundColor: colors.bgPage }]}>
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? colors.bgPrimary : "#064E3B"} translucent={false} />
 
       {/* الرأس الفاخر */}
-      <View style={styles.header}>
+      <View style={[styles.header, isDark && { backgroundColor: colors.bgPrimary }]}>
         <View style={styles.headerTop}>
           <View style={styles.headerTopLeft}>
             <TouchableOpacity
@@ -244,46 +287,71 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* شريط الإعلانات والتنبيهات الصادرة من الإدارة */}
+      <ScrollView contentContainerStyle={[styles.scrollContent, isDark && { backgroundColor: colors.bgPage }]} showsVerticalScrollIndicator={false}>
+        {/* شريط الإعلانات والتنبيهات التفاعلية الصادرة من الإدارة (يختفي فور الضغط عليه) */}
         {announcements
           .filter((ann) => {
+            const annId = String(ann.id);
+            if (dismissedAnnouncements.includes(annId)) return false;
             if (!ann.targetUserIds || !Array.isArray(ann.targetUserIds)) return true;
             const myId = String(currentUser?.readerId || currentUser?.id || '');
             return ann.targetUserIds.map(String).includes(myId);
           })
-          .slice(0, 2)
+          .slice(0, 3)
           .map((ann) => (
-            <View
+            <TouchableOpacity
               key={ann.id}
               style={[
                 styles.announcementBanner,
                 ann.isReminder && styles.announcementReminderBanner,
+                isDark && {
+                  backgroundColor: colors.bgCard,
+                  borderColor: ann.isReminder ? colors.gold : colors.accent,
+                },
               ]}
+              onPress={() => handleDismissAnnouncement(ann.id)}
+              activeOpacity={0.85}
             >
               <View style={styles.announcementHeader}>
-                <Text
-                  style={[
-                    styles.announcementTag,
-                    ann.isReminder && styles.announcementReminderTag,
-                  ]}
+                <TouchableOpacity
+                  style={styles.dismissBtnSmall}
+                  onPress={() => handleDismissAnnouncement(ann.id)}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 >
-                  {ann.isReminder ? '⏰ تذكير خاص بالورد' : '📢 تنبيه من الإدارة'}
-                </Text>
-                <Text style={styles.announcementTitle}>{ann.title}</Text>
+                  <Text style={[styles.dismissBtnSmallText, isDark && { color: colors.textSecondary }]}>✕ إخفاء</Text>
+                </TouchableOpacity>
+
+                <View style={styles.announcementTagGroup}>
+                  <Text
+                    style={[
+                      styles.announcementTag,
+                      ann.isReminder && styles.announcementReminderTag,
+                    ]}
+                  >
+                    {ann.isReminder ? '⏰ تذكير بالورد' : '📢 تنبيه من الإدارة'}
+                  </Text>
+                  <Text style={[styles.announcementTitle, isDark && { color: colors.textPrimary }]}>{ann.title}</Text>
+                </View>
               </View>
-              <Text style={styles.announcementMessage}>{ann.message}</Text>
-            </View>
+
+              <Text style={[styles.announcementMessage, isDark && { color: colors.textSecondary }]}>{ann.message}</Text>
+              
+              <View style={styles.announcementFooter}>
+                <Text style={[styles.dismissHintText, isDark && { color: colors.textMuted }]}>
+                  💡 اضغط على البطاقة في أي مكان لإخفائها
+                </Text>
+              </View>
+            </TouchableOpacity>
           ))}
 
         {/* بطاقة الاستبيان التفاعلي من الإدارة (نعم / لا) */}
         {activeSurvey && (
-          <View style={styles.surveyCard}>
+          <View style={[styles.surveyCard, isDark && { backgroundColor: colors.bgCard, borderColor: colors.accent }]}>
             <View style={styles.surveyCardHeader}>
               <View style={styles.surveyPill}>
                 <Text style={styles.surveyPillText}>📋 استبيان المجموعة</Text>
               </View>
-              <Text style={styles.surveyQuestion}>« {activeSurvey.question} »</Text>
+              <Text style={[styles.surveyQuestion, isDark && { color: colors.textPrimary }]}>« {activeSurvey.question} »</Text>
             </View>
 
             <Text style={styles.surveyPromptText}>يرجى تحديد إجابتك (نعم / لا):</Text>
@@ -329,47 +397,47 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
         )}
 
         {/* بطاقة الورد اليومي المخصص */}
-        <View style={styles.wirdCard}>
+        <View style={[styles.wirdCard, isDark && { backgroundColor: colors.bgCard, borderColor: colors.cardBorder }]}>
           <View style={styles.wirdCardTop}>
             <View style={styles.juzPill}>
               <Text style={styles.juzPillText}>{todayWird.juzText}</Text>
             </View>
-            <Text style={styles.wirdCardTitle}>📖 وردك القرآني لليوم</Text>
+            <Text style={[styles.wirdCardTitle, isDark && { color: colors.textPrimary }]}>📖 وردك القرآني لليوم</Text>
           </View>
 
           {todayWird.surahs ? (
-            <View style={styles.surahBanner}>
-              <Text style={styles.surahBannerText}>سورة: {todayWird.surahs}</Text>
+            <View style={[styles.surahBanner, isDark && { backgroundColor: colors.bgSubtle }]}>
+              <Text style={[styles.surahBannerText, isDark && { color: colors.gold }]}>سورة: {todayWird.surahs}</Text>
             </View>
           ) : null}
 
           {/* نطاق الصفحات والعدد */}
           <View style={styles.pagesGrid}>
-            <View style={styles.pageBox}>
-              <Text style={styles.pageBoxLabel}>من صفحة</Text>
-              <Text style={styles.pageBoxNumber}>{todayWird.startPage}</Text>
+            <View style={[styles.pageBox, isDark && { backgroundColor: colors.bgSubtle, borderColor: colors.border }]}>
+              <Text style={[styles.pageBoxLabel, isDark && { color: colors.textSecondary }]}>من صفحة</Text>
+              <Text style={[styles.pageBoxNumber, isDark && { color: colors.gold }]}>{todayWird.startPage}</Text>
             </View>
 
             <View style={styles.pageArrowBox}>
               <Text style={styles.pageArrowText}>⬅️</Text>
-              <Text style={styles.pagesCountLabel}>{todayWird.pagesCount} صفحة</Text>
+              <Text style={[styles.pagesCountLabel, isDark && { color: colors.textSecondary }]}>{todayWird.pagesCount} صفحة</Text>
             </View>
 
-            <View style={styles.pageBox}>
-              <Text style={styles.pageBoxLabel}>إلى صفحة</Text>
-              <Text style={styles.pageBoxNumber}>{todayWird.endPage}</Text>
+            <View style={[styles.pageBox, isDark && { backgroundColor: colors.bgSubtle, borderColor: colors.border }]}>
+              <Text style={[styles.pageBoxLabel, isDark && { color: colors.textSecondary }]}>إلى صفحة</Text>
+              <Text style={[styles.pageBoxNumber, isDark && { color: colors.gold }]}>{todayWird.endPage}</Text>
             </View>
           </View>
 
           {/* شريط مسار الختمة */}
           <View style={styles.progressContainer}>
             <View style={styles.progressHeader}>
-              <Text style={styles.progressLabel}>مسار الختمة المباركة:</Text>
-              <Text style={styles.progressText}>
+              <Text style={[styles.progressLabel, isDark && { color: colors.textSecondary }]}>مسار الختمة المباركة:</Text>
+              <Text style={[styles.progressText, isDark && { color: colors.gold }]}>
                 الجزء {readerJuz} من 30 ({progressPercent}%)
               </Text>
             </View>
-            <View style={styles.progressBarTrack}>
+            <View style={[styles.progressBarTrack, isDark && { backgroundColor: colors.bgSubtle }]}>
               <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
             </View>
           </View>
@@ -477,6 +545,7 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
                 key={task.id}
                 style={[
                   styles.taskCard,
+                  isDark && { backgroundColor: colors.bgCard, borderColor: colors.border },
                   isCompleted && styles.taskCardCompleted,
                   isExcused && styles.taskCardExcused,
                 ]}
@@ -493,20 +562,20 @@ export default function UserWirdScreen({ currentUser: initialUser, onLogout, onU
                   </View>
                   <View style={styles.taskTitleRow}>
                     <Text style={styles.taskIcon}>{task.icon || '⭐'}</Text>
-                    <Text style={styles.taskTitle}>{task.title}</Text>
+                    <Text style={[styles.taskTitle, isDark && { color: colors.textPrimary }]}>{task.title}</Text>
                   </View>
                 </View>
 
                 {task.description ? (
-                  <Text style={styles.taskDescription}>{task.description}</Text>
+                  <Text style={[styles.taskDescription, isDark && { color: colors.textSecondary }]}>{task.description}</Text>
                 ) : null}
 
                 <View style={styles.taskMetaRow}>
-                  <Text style={styles.taskMetaText}>
-                    🎯 المقدار المطلوب: <Text style={styles.taskMetaBold}>{task.targetCount} {task.unit}</Text>
+                  <Text style={[styles.taskMetaText, isDark && { color: colors.textSecondary }]}>
+                    🎯 المقدار المطلوب: <Text style={[styles.taskMetaBold, isDark && { color: colors.gold }]}>{task.targetCount} {task.unit}</Text>
                   </Text>
-                  <Text style={styles.taskMetaText}>
-                    ⏰ الاستحقاق: <Text style={styles.taskMetaBold}>{task.dueTime || '23:59'}</Text>
+                  <Text style={[styles.taskMetaText, isDark && { color: colors.textSecondary }]}>
+                    ⏰ الاستحقاق: <Text style={[styles.taskMetaBold, isDark && { color: colors.gold }]}>{task.dueTime || '23:59'}</Text>
                   </Text>
                 </View>
 
@@ -1102,8 +1171,37 @@ const styles = StyleSheet.create({
   announcementHeader: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  announcementTagGroup: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
     gap: 8,
-    marginBottom: 4,
+    flex: 1,
+  },
+  dismissBtnSmall: {
+    backgroundColor: 'rgba(0, 0, 0, 0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  dismissBtnSmallText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#92400E',
+  },
+  announcementFooter: {
+    marginTop: 6,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0, 0, 0, 0.06)',
+    alignItems: 'center',
+  },
+  dismissHintText: {
+    fontSize: 10,
+    color: '#B45309',
+    fontWeight: '500',
   },
   announcementTag: {
     backgroundColor: '#D97706',

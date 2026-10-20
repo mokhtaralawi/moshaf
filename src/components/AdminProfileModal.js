@@ -14,6 +14,7 @@ import {
   Keyboard,
 } from 'react-native';
 import { updateAdminProfile } from '../services/storageService';
+import { useAppTheme, THEME_MODES } from '../context/ThemeContext';
 
 export default function AdminProfileModal({
   visible,
@@ -21,6 +22,7 @@ export default function AdminProfileModal({
   admin,
   onProfileUpdated,
 }) {
+  const { themeMode, setThemeMode, isDark, colors } = useAppTheme();
   const [prevAdmin, setPrevAdmin] = useState(null);
   const [name, setName] = useState(admin?.name || '');
   const [username, setUsername] = useState(admin?.username || '');
@@ -93,7 +95,7 @@ export default function AdminProfileModal({
           <View style={StyleSheet.absoluteFillObject} />
         </TouchableWithoutFeedback>
 
-        <View style={styles.modalCard}>
+        <View style={[styles.modalCard, isDark && { backgroundColor: colors.bgCard, borderColor: colors.cardBorder }]}>
           <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -102,12 +104,12 @@ export default function AdminProfileModal({
           >
             {/* الرأس */}
             <View style={styles.header}>
-              <View style={styles.iconCircle}>
+              <View style={[styles.iconCircle, isDark && { backgroundColor: colors.bgSubtle, borderColor: colors.gold }]}>
                 <Text style={styles.headerIcon}>👑</Text>
               </View>
               <View style={styles.headerTitleGroup}>
-                <Text style={styles.modalTitle}>تعديل حساب المدير</Text>
-                <Text style={styles.modalSubtitle}>
+                <Text style={[styles.modalTitle, isDark && { color: colors.textPrimary }]}>تعديل حساب المدير</Text>
+                <Text style={[styles.modalSubtitle, isDark && { color: colors.textSecondary }]}>
                   تعديل الاسم الكامل، اسم المستخدم (معرف الدخول)، وكلمة المرور
                 </Text>
               </View>
@@ -115,44 +117,44 @@ export default function AdminProfileModal({
 
             {/* الحقول */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>اسم المدير الكامل / اللقب:</Text>
+              <Text style={[styles.inputLabel, isDark && { color: colors.textSecondary }]}>اسم المدير الكامل / اللقب:</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, isDark && { backgroundColor: colors.bgSubtle, borderColor: colors.border, color: colors.textPrimary }]}
                 value={name}
                 onChangeText={setName}
                 placeholder="مثال: الشيخ عبد الرحمن"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={isDark ? colors.textMuted : "#94A3B8"}
                 textAlign="right"
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>اسم المستخدم (معرف الدخول):</Text>
+              <Text style={[styles.inputLabel, isDark && { color: colors.textSecondary }]}>اسم المستخدم (معرف الدخول):</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, isDark && { backgroundColor: colors.bgSubtle, borderColor: colors.border, color: colors.textPrimary }]}
                 value={username}
                 onChangeText={setUsername}
                 placeholder="اسم المستخدم لتسجيل الدخول"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={isDark ? colors.textMuted : "#94A3B8"}
                 autoCapitalize="none"
                 textAlign="right"
               />
             </View>
 
-            <View style={styles.divider} />
+            <View style={[styles.divider, isDark && { backgroundColor: colors.border }]} />
 
-            <Text style={styles.sectionHeader}>
+            <Text style={[styles.sectionHeader, isDark && { color: colors.gold }]}>
               🔒 كلمة المرور (اتركها فارغة إذا لم ترغب بتغييرها):
             </Text>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>كلمة المرور الجديدة:</Text>
+              <Text style={[styles.inputLabel, isDark && { color: colors.textSecondary }]}>كلمة المرور الجديدة:</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, isDark && { backgroundColor: colors.bgSubtle, borderColor: colors.border, color: colors.textPrimary }]}
                 value={newPassword}
                 onChangeText={setNewPassword}
                 placeholder="أدخل كلمة مرور جديدة"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={isDark ? colors.textMuted : "#94A3B8"}
                 secureTextEntry
                 textAlign="right"
               />
@@ -160,18 +162,88 @@ export default function AdminProfileModal({
 
             {newPassword.trim() ? (
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>تأكيد كلمة المرور الجديدة:</Text>
+                <Text style={[styles.inputLabel, isDark && { color: colors.textSecondary }]}>تأكيد كلمة المرور الجديدة:</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, isDark && { backgroundColor: colors.bgSubtle, borderColor: colors.border, color: colors.textPrimary }]}
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   placeholder="أعد إدخال كلمة المرور"
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={isDark ? colors.textMuted : "#94A3B8"}
                   secureTextEntry
                   textAlign="right"
                 />
               </View>
             ) : null}
+
+            {/* مظهر ووضع التطبيق */}
+            <View style={[styles.divider, isDark && { backgroundColor: colors.border }]} />
+            <Text style={[styles.sectionHeader, isDark && { color: colors.gold }]}>
+              🎨 مظهر ووضع التطبيق:
+            </Text>
+            <View style={styles.themeSelectorRow}>
+              <TouchableOpacity
+                style={[
+                  styles.themeBtn,
+                  isDark && { backgroundColor: colors.bgSubtle, borderColor: colors.border },
+                  themeMode === THEME_MODES.LIGHT && styles.themeBtnActive,
+                ]}
+                onPress={() => setThemeMode(THEME_MODES.LIGHT)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.themeBtnIcon}>☀️</Text>
+                <Text
+                  style={[
+                    styles.themeBtnText,
+                    isDark && { color: colors.textSecondary },
+                    themeMode === THEME_MODES.LIGHT && styles.themeBtnTextActive,
+                  ]}
+                >
+                  نهاري
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.themeBtn,
+                  isDark && { backgroundColor: colors.bgSubtle, borderColor: colors.border },
+                  themeMode === THEME_MODES.DARK && styles.themeBtnActive,
+                ]}
+                onPress={() => setThemeMode(THEME_MODES.DARK)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.themeBtnIcon}>🌙</Text>
+                <Text
+                  style={[
+                    styles.themeBtnText,
+                    isDark && { color: colors.textSecondary },
+                    themeMode === THEME_MODES.DARK && styles.themeBtnTextActive,
+                  ]}
+                >
+                  ليلي
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.themeBtn,
+                  isDark && { backgroundColor: colors.bgSubtle, borderColor: colors.border },
+                  themeMode === THEME_MODES.SYSTEM && styles.themeBtnActive,
+                ]}
+                onPress={() => setThemeMode(THEME_MODES.SYSTEM)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.themeBtnIcon}>⚙️</Text>
+                <Text
+                  style={[
+                    styles.themeBtnText,
+                    isDark && { color: colors.textSecondary },
+                    themeMode === THEME_MODES.SYSTEM && styles.themeBtnTextActive,
+                  ]}
+                >
+                  النظام
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             {/* الأزرار */}
             <View style={styles.buttonRow}>
@@ -332,5 +404,38 @@ const styles = StyleSheet.create({
   },
   disabledBtn: {
     opacity: 0.6,
+  },
+  themeSelectorRow: {
+    flexDirection: 'row-reverse',
+    gap: 8,
+    marginBottom: 12,
+  },
+  themeBtn: {
+    flex: 1,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+  },
+  themeBtnActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#059669',
+  },
+  themeBtnIcon: {
+    fontSize: 15,
+  },
+  themeBtnText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#64748B',
+  },
+  themeBtnTextActive: {
+    color: '#059669',
   },
 });

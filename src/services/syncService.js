@@ -98,10 +98,26 @@ export const applyActionsReducer = (currentState, actions = []) => {
         state.settings = { ...state.settings, ...payload };
         break;
       }
+      case 'SAVE_TASKS': {
+        if (Array.isArray(payload.tasks)) {
+          state.tasks = payload.tasks;
+        }
+        break;
+      }
       case 'CREATE_TASK': {
         if (payload.task) {
           const exists = state.tasks.some((t) => t.id === payload.task.id);
           if (!exists) state.tasks.push(payload.task);
+        }
+        break;
+      }
+      case 'REGISTER_PUSH_TOKEN': {
+        if (!state.pushTokens) state.pushTokens = {};
+        if (payload.userId && payload.token) {
+          state.pushTokens[payload.userId] = {
+            token: payload.token,
+            updatedAt: new Date().toISOString(),
+          };
         }
         break;
       }
@@ -450,8 +466,9 @@ export const processSyncQueue = async () => {
 
 /**
  * سحب أحدث بيانات الفريق من Supabase أو السيرفر الاحتياطي (Pull Sync)
+ * @param {boolean} force - إجبار تحديث الذاكرة المحلية حتى لو لم يتغير ختم الوقت
  */
-export const pullLatestFromCloud = async () => {
+export const pullLatestFromCloud = async (force = false) => {
   if (syncState.isSyncing) return false;
 
   try {
@@ -499,12 +516,17 @@ export const pullLatestFromCloud = async () => {
       }
     }
 
-    // دمج البيانات إذا وجدت وكانت أحدث
+    // دمج البيانات إذا وجدت وكانت أحدث أو إذا كان التخزين المحلي خالياً
     if (remoteState) {
       const localLastMod = await AsyncStorage.getItem(SYNC_KEYS.LAST_MODIFIED);
-      if (remoteLastMod && remoteLastMod !== localLastMod) {
+      const localReaders = await AsyncStorage.getItem(SYNC_KEYS.STORAGE_KEYS_MAP.READERS);
+      const isMissingLocal = !localReaders || !localLastMod;
+
+      if (force || isMissingLocal || (remoteLastMod && remoteLastMod !== localLastMod)) {
         await applyCloudStateToLocal(remoteState);
-        await AsyncStorage.setItem(SYNC_KEYS.LAST_MODIFIED, remoteLastMod);
+        if (remoteLastMod) {
+          await AsyncStorage.setItem(SYNC_KEYS.LAST_MODIFIED, remoteLastMod);
+        }
         const nowIso = new Date().toISOString();
         await AsyncStorage.setItem(SYNC_KEYS.LAST_SYNC, nowIso);
         syncState.lastSyncedAt = nowIso;
@@ -527,10 +549,16 @@ export const syncWithCloud = async (isManual = false) => {
     return { success: false, message: 'لا يوجد اتصال بالإنترنت' };
   }
 
-  // 1. أولاً إرسال ما لدينا من عمليات معلقة
+  // 1. التأكد أولاً من سحب بيانات السحابة إذا كانت الذاكرة المحلية فارغة تماماً
+  const localReaders = await AsyncStorage.getItem(SYNC_KEYS.STORAGE_KEYS_MAP.READERS);
+  if (!localReaders) {
+    await pullLatestFromCloud(true);
+  }
+
+  // 2. إرسال ما لدينا من عمليات معلقة إن وجدت
   const pushRes = await processSyncQueue();
 
-  // 2. ثانياً سحب أحدث بيانات الفريق
+  // 3. سحب أحدث بيانات الفريق
   const pulledNew = await pullLatestFromCloud();
 
   return {

@@ -46,7 +46,7 @@ cd android
 ### أ) بناء APK بحجم مخفض لمعمارية الهواتف الحديثة (arm64-v8a) [الموصى به]:
 # الحجم يكون تقريباً ~23 ميجابايت فقط بدلاً من 70 ميجابايت:
 .\gradlew.bat assembleRelease -PreactNativeArchitectures=arm64-v8a
-
+npx eas-cli@latest update --channel preview --message "رسالة التحديث الجديد"
 ### ب) بناء APK لجميع الهواتف بصيغة Universal (شامل كل المعماريات):
 .\gradlew.bat assembleRelease
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { getReaderWirdDetails } from '../utils/wirdCalculator';
+import { useAppTheme } from '../context/ThemeContext';
 
 export default function ReaderCard({
   reader,
@@ -11,6 +12,7 @@ export default function ReaderCard({
   status = 'pending',
   onToggleStatus,
 }) {
+  const { isDark, colors } = useAppTheme();
   // حساب تفاصيل الورد والصفحات والسور
   const wird = getReaderWirdDetails(reader.currentJuz, juzCount);
 
@@ -18,7 +20,7 @@ export default function ReaderCard({
   const progressPercent = Math.min(100, Math.round((reader.currentJuz / 30) * 100));
 
   return (
-    <View style={styles.cardContainer}>
+    <View style={[styles.cardContainer, isDark && { backgroundColor: colors.bgCard, borderColor: colors.cardBorder }]}>
       {/* الرأس: شارة الترتيب + اسم القارئ + شارة الحالة والجزء */}
       <View style={styles.cardHeader}>
         <View style={styles.readerInfoRow}>
@@ -28,9 +30,9 @@ export default function ReaderCard({
           </View>
 
           <View style={styles.nameBlock}>
-            <Text style={styles.readerName}>{reader.name}</Text>
+            <Text style={[styles.readerName, isDark && { color: colors.textPrimary }]}>{reader.name}</Text>
             {wird.surahs ? (
-              <Text style={styles.surahSubtitle} numberOfLines={1}>
+              <Text style={[styles.surahSubtitle, isDark && { color: colors.textSecondary }]} numberOfLines={1}>
                 📖 {wird.surahs}
               </Text>
             ) : null}
@@ -74,8 +76,8 @@ export default function ReaderCard({
       {/* تفاصيل الصفحات ومقدار الورد */}
       <View style={styles.detailsRow}>
         <View style={styles.pagesBox}>
-          <Text style={styles.pagesLabel}>نطاق الصفحات:</Text>
-          <Text style={styles.pagesRange}>
+          <Text style={[styles.pagesLabel, isDark && { color: colors.textSecondary }]}>نطاق الصفحات:</Text>
+          <Text style={[styles.pagesRange, isDark && { color: colors.textSecondary }]}>
             صـ <Text style={styles.pageHighlight}>{wird.startPage}</Text> إلى{' '}
             <Text style={styles.pageHighlight}>{wird.endPage}</Text>
           </Text>
@@ -89,10 +91,10 @@ export default function ReaderCard({
       {/* شريط التقدم في المصحف (30 جزء) */}
       <View style={styles.progressContainer}>
         <View style={styles.progressHeader}>
-          <Text style={styles.progressLabel}>مسار الختمة:</Text>
-          <Text style={styles.progressPercentText}>{reader.currentJuz} من 30 جزء ({progressPercent}%)</Text>
+          <Text style={[styles.progressLabel, isDark && { color: colors.textSecondary }]}>مسار الختمة:</Text>
+          <Text style={[styles.progressPercentText, isDark && { color: colors.gold }]}>{reader.currentJuz} من 30 جزء ({progressPercent}%)</Text>
         </View>
-        <View style={styles.progressBarTrack}>
+        <View style={[styles.progressBarTrack, isDark && { backgroundColor: colors.bgSubtle }]}>
           <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
         </View>
       </View>

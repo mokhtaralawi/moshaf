@@ -10,8 +10,13 @@
       "policy": "appVersion"
     },
     "updates": {
+      "enabled": true,
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 3000
+      "fallbackToCacheTimeout": 3000,
+      "url": "https://u.expo.dev/04bd7deb-f75f-457e-a953-369c30a31453",
+      "requestHeaders": {
+        "expo-channel-name": "preview"
+      }
     },
     "ios": {
       "supportsTablet": true
@@ -27,7 +32,8 @@
       "favicon": "./assets/logo.png"
     },
     "plugins": [
-      "expo-sharing"
+      "expo-sharing",
+      "expo-updates"
     ],
     "extra": {
       "eas": {

@@ -22,11 +22,14 @@ import {
   updateUserFirstLoginDecision,
   loadReaders,
 } from '../services/storageService';
+import { subscribeSyncStatus, pullLatestFromCloud } from '../services/syncService';
 import { getFormattedArabicDate, getFormattedHijriDate } from '../utils/wirdCalculator';
 import FirstLoginModal from '../components/FirstLoginModal';
 import SyncStatusBadge from '../components/SyncStatusBadge';
+import { useAppTheme } from '../context/ThemeContext';
 
 export default function LoginScreen({ onLoginSuccess }) {
+  const { isDark, colors } = useAppTheme();
   // بيانات تسجيل الدخول الموحد
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -46,10 +49,6 @@ export default function LoginScreen({ onLoginSuccess }) {
   const todayArabicDate = getFormattedArabicDate(0);
   const todayHijriDate = getFormattedHijriDate(0);
 
-  useEffect(() => {
-    fetchReaders();
-  }, []);
-
   const fetchReaders = async () => {
     try {
       const list = await loadReaders();
@@ -58,6 +57,16 @@ export default function LoginScreen({ onLoginSuccess }) {
       console.error(e);
     }
   };
+
+  useEffect(() => {
+    fetchReaders();
+    const unsubscribe = subscribeSyncStatus((status) => {
+      if (status.hasRemoteUpdates) {
+        fetchReaders();
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleLogin = async () => {
     setErrorMsg('');
@@ -68,6 +77,11 @@ export default function LoginScreen({ onLoginSuccess }) {
 
     setLoading(true);
     try {
+      // سحب أحدث بيانات الاعتماد والمستخدمين من السحابة قبل التحقق إن أمكن
+      try {
+        await pullLatestFromCloud();
+      } catch (_e) {}
+
       const result = await authenticateUser(identifier.trim(), password.trim());
       setLoading(false);
 

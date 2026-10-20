@@ -37,8 +37,10 @@ import AdminProfileModal from '../components/AdminProfileModal';
 import UnreadReminderModal from '../components/UnreadReminderModal';
 import SyncStatusBadge from '../components/SyncStatusBadge';
 import { subscribeSyncStatus } from '../services/syncService';
+import { useAppTheme, THEME_MODES } from '../context/ThemeContext';
 
 export default function HomeScreen({ currentUser: initialUser, onLogout, onUserUpdated }) {
+  const { themeMode, setThemeMode, isDark, colors } = useAppTheme();
   const [currentUser, setCurrentUser] = useState(initialUser);
   const [readers, setReaders] = useState([]);
   const [juzCount, setJuzCount] = useState(1);
@@ -280,13 +282,14 @@ export default function HomeScreen({ currentUser: initialUser, onLogout, onUserU
   const totalDailyAjza = readers.length * juzCount;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#064E3B" translucent={false} />
+    <SafeAreaView style={[styles.container, isDark && { backgroundColor: colors.bgPage }]}>
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? colors.bgPrimary : "#064E3B"} translucent={false} />
 
       {/* قائمة الصفحة الرئيسية الموحدة: الرأس الترحيبي وأدوات التحكم وقائمة القراء تتحرك كلها مع السكرول بار */}
       <FlatList
         data={readers}
         keyExtractor={(item) => item.id}
+        contentContainerStyle={[styles.listContent, isDark && { backgroundColor: colors.bgPage }]}
         renderItem={({ item, index }) => (
           <View style={styles.readerItemWrapper}>
             <ReaderCard
@@ -306,7 +309,7 @@ export default function HomeScreen({ currentUser: initialUser, onLogout, onUserU
         ListHeaderComponent={
           <View>
             {/* الرأس الفاخر (Emerald Islamic Header) - المربع الترحيبي قابل للحركة مع التمرير */}
-            <View style={styles.header}>
+            <View style={[styles.header, isDark && { backgroundColor: colors.bgPrimary, borderBottomColor: colors.gold }]}>
               {/* شريط الإدارة العلوي (صلاحيات المدير + الإعدادات + كلمة المرور + خروج) */}
               <View style={styles.adminBar}>
                 <View style={styles.adminBadgeRow}>
@@ -323,6 +326,31 @@ export default function HomeScreen({ currentUser: initialUser, onLogout, onUserU
                 </View>
 
                 <View style={styles.adminActions}>
+                  {/* زر التبديل السريع للأوضاع (نهاري / ليلي / النظام) */}
+                  <TouchableOpacity
+                    style={[
+                      styles.adminActionBtn,
+                      {
+                        backgroundColor: isDark ? 'rgba(245, 158, 11, 0.28)' : 'rgba(255, 255, 255, 0.18)',
+                        borderColor: isDark ? '#F59E0B' : 'rgba(255, 255, 255, 0.35)',
+                      },
+                    ]}
+                    onPress={() => {
+                      const nextMode =
+                        themeMode === THEME_MODES.LIGHT
+                          ? THEME_MODES.DARK
+                          : themeMode === THEME_MODES.DARK
+                          ? THEME_MODES.SYSTEM
+                          : THEME_MODES.LIGHT;
+                      setThemeMode(nextMode);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={{ color: isDark ? '#FDE68A' : '#FFFFFF', fontSize: 10.5, fontWeight: 'bold' }}>
+                      {themeMode === THEME_MODES.DARK ? '🌙 ليلي' : themeMode === THEME_MODES.LIGHT ? '☀️ نهاري' : '⚙️ النظام'}
+                    </Text>
+                  </TouchableOpacity>
+
                   <TouchableOpacity
                     style={[styles.adminActionBtn, styles.profileBtn]}
                     onPress={() => setIsAdminProfileVisible(true)}
@@ -362,7 +390,7 @@ export default function HomeScreen({ currentUser: initialUser, onLogout, onUserU
               {/* الصف العلوي: العنوان والتاريخ وزر المنبه */}
               <View style={styles.headerTopRow}>
                 <View style={styles.titleGroup}>
-                  <View style={styles.iconCircle}>
+                  <View style={[styles.iconCircle, isDark && { backgroundColor: colors.bgCard, borderColor: colors.gold }]}>
                     <Image
                       source={require('../../assets/logo.png')}
                       style={styles.headerLogoImg}
@@ -382,11 +410,11 @@ export default function HomeScreen({ currentUser: initialUser, onLogout, onUserU
                 <View style={styles.headerTopActions}>
                   {pendingCount > 0 && (
                     <TouchableOpacity
-                      style={styles.unreadReminderPill}
+                      style={[styles.unreadReminderPill, isDark && { backgroundColor: '#78350F', borderColor: colors.gold }]}
                       onPress={() => setIsUnreadReminderVisible(true)}
                       activeOpacity={0.8}
                     >
-                      <Text style={styles.unreadReminderPillText}>
+                      <Text style={[styles.unreadReminderPillText, isDark && { color: '#FDE68A' }]}>
                         📢 تذكير ({pendingCount})
                       </Text>
                     </TouchableOpacity>
@@ -405,26 +433,26 @@ export default function HomeScreen({ currentUser: initialUser, onLogout, onUserU
               </View>
 
               {/* بطاقة الإحصائيات والإنجاز اليومي المدمجة */}
-              <View style={styles.headerStatsCard}>
+              <View style={[styles.headerStatsCard, isDark && { backgroundColor: colors.bgCard, borderColor: colors.cardBorder }]}>
                 <View style={styles.statBox}>
-                  <Text style={styles.statLabel}>إجمالي القراء</Text>
-                  <Text style={styles.statNumber}>{readers.length}</Text>
+                  <Text style={[styles.statLabel, isDark && { color: colors.textSecondary }]}>إجمالي القراء</Text>
+                  <Text style={[styles.statNumber, isDark && { color: colors.textPrimary }]}>{readers.length}</Text>
                 </View>
 
-                <View style={styles.statDivider} />
+                <View style={[styles.statDivider, isDark && { backgroundColor: colors.border }]} />
 
                 <View style={styles.statBox}>
-                  <Text style={styles.statLabel}>الورد لكل قارئ</Text>
-                  <Text style={styles.statNumberGold}>
+                  <Text style={[styles.statLabel, isDark && { color: colors.textSecondary }]}>الورد لكل قارئ</Text>
+                  <Text style={[styles.statNumberGold, isDark && { color: colors.gold }]}>
                     {juzCount === 1 ? '1 جزء' : juzCount === 2 ? 'جزآن' : `${juzCount} أجزاء`}
                   </Text>
                 </View>
 
-                <View style={styles.statDivider} />
+                <View style={[styles.statDivider, isDark && { backgroundColor: colors.border }]} />
 
                 <View style={styles.statBox}>
-                  <Text style={styles.statLabel}>أجزاء المجموعة</Text>
-                  <Text style={styles.statNumberEmerald}>{totalDailyAjza}</Text>
+                  <Text style={[styles.statLabel, isDark && { color: colors.textSecondary }]}>أجزاء المجموعة</Text>
+                  <Text style={[styles.statNumberEmerald, isDark && { color: colors.emeraldLight }]}>{totalDailyAjza}</Text>
                 </View>
               </View>
 
@@ -452,16 +480,16 @@ export default function HomeScreen({ currentUser: initialUser, onLogout, onUserU
             <View style={styles.contentSection}>
               {/* محدد مقدار الورد اليومي (Pill Tabs) */}
               <View style={styles.wirdSelectorContainer}>
-                <Text style={styles.selectorLabel}>مقدار الورد اليومي:</Text>
-                <View style={styles.wirdPillRow}>
+                <Text style={[styles.selectorLabel, isDark && { color: colors.textSecondary }]}>مقدار الورد اليومي:</Text>
+                <View style={[styles.wirdPillRow, isDark && { backgroundColor: colors.bgCard, borderColor: colors.cardBorder, borderWidth: 1 }]}>
                   {WIRD_AMOUNT_OPTIONS.map((opt) => (
                     <TouchableOpacity
                       key={opt.value}
-                      style={[styles.wirdPill, juzCount === opt.value && styles.activeWirdPill]}
+                      style={[styles.wirdPill, juzCount === opt.value && (isDark ? { backgroundColor: colors.emerald, shadowColor: colors.emerald } : styles.activeWirdPill)]}
                       onPress={() => handleWirdCountChange(opt.value)}
                       activeOpacity={0.7}
                     >
-                      <Text style={[styles.wirdPillText, juzCount === opt.value && styles.activeWirdPillText]}>
+                      <Text style={[styles.wirdPillText, isDark && { color: colors.textSecondary }, juzCount === opt.value && (isDark ? { color: colors.gold } : styles.activeWirdPillText)]}>
                         {opt.label}
                       </Text>
                     </TouchableOpacity>
@@ -491,9 +519,9 @@ export default function HomeScreen({ currentUser: initialUser, onLogout, onUserU
               {/* ترويسة قائمة القراء مع زر الإضافة الزمردي */}
               <View style={styles.listHeaderRow}>
                 <View style={styles.listTitleGroup}>
-                  <Text style={styles.listTitle}>قائمة القراء والمتابعة</Text>
-                  <View style={styles.countBadge}>
-                    <Text style={styles.countBadgeText}>{readers.length}</Text>
+                  <Text style={[styles.listTitle, isDark && { color: colors.textPrimary }]}>قائمة القراء والمتابعة</Text>
+                  <View style={[styles.countBadge, isDark && { backgroundColor: colors.bgSubtle, borderColor: colors.cardBorder }]}>
+                    <Text style={[styles.countBadgeText, isDark && { color: colors.gold }]}>{readers.length}</Text>
                   </View>
                 </View>
 
@@ -511,13 +539,12 @@ export default function HomeScreen({ currentUser: initialUser, onLogout, onUserU
             </View>
           </View>
         }
-        contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={true}
         ListEmptyComponent={
-          <View style={styles.emptyCard}>
+          <View style={[styles.emptyCard, isDark && { backgroundColor: colors.bgCard, borderColor: colors.cardBorder }]}>
             <Text style={styles.emptyIcon}>🕌</Text>
-            <Text style={styles.emptyTitle}>لا يوجد قراء مسجلين حالياً</Text>
-            <Text style={styles.emptySubtitle}>
+            <Text style={[styles.emptyTitle, isDark && { color: colors.textPrimary }]}>لا يوجد قراء مسجلين حالياً</Text>
+            <Text style={[styles.emptySubtitle, isDark && { color: colors.textSecondary }]}>
               ابدأ بإضافة أعضاء المجموعة لتوزيع الورد القرآني تلقائياً ومتابعة الإنجاز اليومي.
             </Text>
             <TouchableOpacity

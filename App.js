@@ -1,17 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { loadCurrentUser, logoutUser } from './src/services/storageService';
+import { pullLatestFromCloud } from './src/services/syncService';
+import { registerForPushNotificationsAsync } from './src/services/notificationService';
+import { ThemeProvider } from './src/context/ThemeContext';
 import SplashScreen from './src/screens/SplashScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import UserWirdScreen from './src/screens/UserWirdScreen';
 
-export default function App() {
+function MainApp() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isAuthLoaded, setIsAuthLoaded] = useState(false);
   const [isSplashDone, setIsSplashDone] = useState(false);
 
   useEffect(() => {
+    // سحب أحدث نسخة من السحابة في الخلفية بمجرد تشغيل التطبيق
+    pullLatestFromCloud(true).catch((e) => console.log('Initial cloud pull:', e));
     checkAuth();
   }, []);
 
@@ -19,6 +24,11 @@ export default function App() {
     try {
       const user = await loadCurrentUser();
       setCurrentUser(user);
+      if (user && (user.id || user.readerId)) {
+        registerForPushNotificationsAsync(user.readerId || user.id).catch((e) =>
+          console.log('Push token register:', e)
+        );
+      }
     } catch (e) {
       console.error('Error loading current user:', e);
     } finally {
@@ -28,6 +38,11 @@ export default function App() {
 
   const handleLoginSuccess = (userSession) => {
     setCurrentUser(userSession);
+    if (userSession && (userSession.id || userSession.readerId)) {
+      registerForPushNotificationsAsync(userSession.readerId || userSession.id).catch((e) =>
+        console.log('Push token register on login:', e)
+      );
+    }
   };
 
   const handleLogout = async () => {
@@ -72,6 +87,14 @@ export default function App() {
       onLogout={handleLogout}
       onUserUpdated={(updatedUser) => setCurrentUser(updatedUser)}
     />
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <MainApp />
+    </ThemeProvider>
   );
 }
 
